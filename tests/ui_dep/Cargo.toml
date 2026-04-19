@@ -1,0 +1,25 @@
+# Helper crate for the `ui` test harness only.
+#
+# `ui_test`'s `DependencyBuilder` enumerates the *declared* dependencies of the
+# crate it points at and panics if one is absent from the resolved metadata.
+# `safegraph`'s `sprs` dependency is optional, so it is pruned from a default
+# `cargo metadata` resolve — which made the UI harness panic once `sprs` became
+# optional. Pointing the builder at this crate (whose only direct dependency is
+# `safegraph`) sidesteps that: the harness only ever inspects `safegraph`, never
+# its transitive optional deps.
+[workspace]
+
+[package]
+name = "ui-dep"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+safegraph = { path = "../.." }
+# `safegraph::graph!` expands to `safegraph_macros::graph!`, so the proc-macro
+# crate must also be exposed to the compile-fail test files as an extern.
+safegraph-macros = { path = "../../macro" }

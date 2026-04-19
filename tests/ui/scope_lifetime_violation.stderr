@@ -1,0 +1,31 @@
+error[E0521]: borrowed data escapes outside of closure
+  --> tests/ui/scope_lifetime_violation.rs:13:9
+   |
+11 |     let mut leaked = None;
+   |         ---------- `leaked` declared here, outside of the closure body
+12 |     g.scope(|ctx| {
+   |              --- `ctx` is a reference that is only valid in the closure body
+13 |         leaked = Some(ctx.node_index(&0).unwrap());
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ctx` escapes the closure body here
+   |
+   = note: requirement occurs because of the type `safegraph::graph::context::NodeIx<'_, u32>`, which makes the generic argument `'_` invariant
+   = note: the struct `safegraph::graph::context::NodeIx<'scope, I>` is invariant over the parameter `'scope`
+   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+
+error[E0521]: borrowed data escapes outside of closure
+  --> tests/ui/scope_lifetime_violation.rs:29:9
+   |
+27 |     let mut leaked = None;
+   |         ---------- `leaked` declared here, outside of the closure body
+28 |     g.scope(|ctx| {
+   |              --- `ctx` is a reference that is only valid in the closure body
+29 |         leaked = Some(ctx.edge_index(&10).unwrap());
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ctx` escapes the closure body here
+   |
+   = note: requirement occurs because of the type `safegraph::graph::context::EdgeIx<'_, u32>`, which makes the generic argument `'_` invariant
+   = note: the struct `safegraph::graph::context::EdgeIx<'scope, I>` is invariant over the parameter `'scope`
+   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0521`.

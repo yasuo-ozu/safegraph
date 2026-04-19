@@ -1,0 +1,37 @@
+error[E0599]: no method named `scope_mut` found for mutable reference `&mut LinkedAdjEdgeGraph<BTreeMap<u32, NodeRepr<Option<u32>>>, ...>` in the current scope
+  --> tests/ui/scope_mut_swap_contexts.rs:13:8
+   |
+13 |     g1.scope_mut(|mut wrap_a| {
+   |     ---^^^^^^^^^
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: trait `Graph` which provides `scope_mut` is implemented but not in scope; perhaps you want to import it
+   |
+ 1 + use safegraph::Graph;
+   |
+help: there is a method `scope` with a similar name
+   |
+13 -     g1.scope_mut(|mut wrap_a| {
+13 +     g1.scope(|mut wrap_a| {
+   |
+
+error[E0599]: no method named `scope_mut` found for mutable reference `&mut LinkedAdjEdgeGraph<BTreeMap<u32, NodeRepr<Option<u32>>>, ...>` in the current scope
+  --> tests/ui/scope_mut_swap_contexts.rs:14:12
+   |
+14 |         g2.scope_mut(|mut wrap_b| {
+   |         ---^^^^^^^^^
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: trait `Graph` which provides `scope_mut` is implemented but not in scope; perhaps you want to import it
+   |
+ 1 + use safegraph::Graph;
+   |
+help: there is a method `scope` with a similar name
+   |
+14 -         g2.scope_mut(|mut wrap_b| {
+14 +         g2.scope(|mut wrap_b| {
+   |
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0599`.

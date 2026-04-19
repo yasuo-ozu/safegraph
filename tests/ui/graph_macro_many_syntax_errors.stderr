@@ -1,0 +1,70 @@
+error: empty forward edge must use `-->` (not `-- -->`)
+ --> tests/ui/graph_macro_many_syntax_errors.rs:5:59
+  |
+5 |     let _a: VecGraph<u32, u32> = safegraph::graph!({1} -- --> {2});
+  |                                                           ^
+
+error: empty reverse edge must use `<--` (not `<-- --`)
+ --> tests/ui/graph_macro_many_syntax_errors.rs:7:63
+  |
+7 |     let _b: VecGraph<u32, u32> = safegraph::graph!({1} <-- -- {2});
+  |                                                               ^
+
+error: expected `>`
+ --> tests/ui/graph_macro_many_syntax_errors.rs:9:66
+  |
+9 |     let _c: VecGraph<u32, u32> = safegraph::graph!({1} -- {2} -- {3});
+  |                                                                  ^
+
+error: unexpected end of input, expected identifier
+  --> tests/ui/graph_macro_many_syntax_errors.rs:11:34
+   |
+11 |     let _d: VecGraph<u32, u32> = safegraph::graph!({1} -->);
+   |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the macro `safegraph_macros::graph` which comes from the expansion of the macro `safegraph::graph` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: expected identifier
+  --> tests/ui/graph_macro_many_syntax_errors.rs:13:52
+   |
+13 |     let _e: VecGraph<u32, u32> = safegraph::graph!(--> {1});
+   |                                                    ^
+
+error: unexpected end of input, expected an expression
+  --> tests/ui/graph_macro_many_syntax_errors.rs:17:53
+   |
+17 |     let _g: VecGraph<u32, u32> = safegraph::graph!({} --> {2});
+   |                                                     ^
+
+error: unexpected end of input, expected an expression
+  --> tests/ui/graph_macro_many_syntax_errors.rs:19:60
+   |
+19 |     let _h: VecGraph<u32, u32> = safegraph::graph!({1} -- {} --> {2});
+   |                                                            ^
+
+error: unexpected end of input, expected an expression
+  --> tests/ui/graph_macro_many_syntax_errors.rs:21:61
+   |
+21 |     let _i: VecGraph<u32, u32> = safegraph::graph!({1} --> {});
+   |                                                             ^
+
+error: expected `-` with joint spacing
+  --> tests/ui/graph_macro_many_syntax_errors.rs:23:68
+   |
+23 |     let _j: VecGraph<u32, u32> = safegraph::graph!({1} --> {2} {3} --> {4});
+   |                                                                    ^
+
+error: expected identifier
+  --> tests/ui/graph_macro_many_syntax_errors.rs:27:23
+   |
+27 |     safegraph::graph!(=> {1} --> {2});
+   |                       ^
+
+error: expected identifier
+  --> tests/ui/graph_macro_many_syntax_errors.rs:29:23
+   |
+29 |     safegraph::graph!(&mut base -> {1} --> {2});
+   |                       ^
+
+error: aborting due to 11 previous errors
+

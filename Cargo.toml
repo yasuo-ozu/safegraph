@@ -1,0 +1,52 @@
+# `safegraph` is both the workspace root package and a member; `macro/` (the
+# `safegraph-macros` proc-macro crate) is the other member. Plain `members` +
+# `resolver = "2"` only — no workspace inheritance (`[workspace.package]` /
+# `*.workspace = true`), which needs Cargo 1.64, so this stays at the 1.56 MSRV.
+[workspace]
+members = ["macro"]
+resolver = "2"
+
+[package]
+name = "safegraph"
+version = "0.1.0"
+edition = "2021"
+# Core MSRV. The optional `matrix` backend pulls `sprs`/`ndarray`, which need
+# a newer rustc (1.64+), so enabling `matrix` raises the effective MSRV.
+rust-version = "1.56"
+authors = ["yasuo-ozu <yasuo@ozu.email>"]
+description = "A type-safe, scope-aware graph library that leverages Rust's type system to prevent common graph-related bugs at compile time"
+documentation = "https://docs.rs/safegraph"
+homepage = "https://github.com/yasuo-ozu/safegraph"
+repository = "https://github.com/yasuo-ozu/safegraph"
+license = "MIT"
+keywords = ["graph", "algorithm", "data-structure", "type-safe", "scope"]
+categories = ["data-structures", "algorithms"]
+readme = "README.md"
+
+[features]
+default = ["matrix"]
+matrix = ["sprs"]
+
+[dependencies]
+safegraph-macros = { path = "macro", version = "0.1.0" }
+rustversion = "1"
+num-traits = "0.2"
+sprs = { version = "0.11", default-features = false, optional = true }
+
+[dev-dependencies]
+ui_test = "0.30.7"
+criterion = { version = "0.5", features = ["html_reports"] }
+rand = "0.8"
+petgraph = "0.6"
+ir-assert = "0.1"
+
+
+[[bench]]
+name = "graph_benchmark"
+path = "benchmark/main.rs"
+harness = false
+
+[[test]]
+name = "ui"
+path = "tests/ui.rs"
+harness = false

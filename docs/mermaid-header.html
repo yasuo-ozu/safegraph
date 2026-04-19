@@ -1,0 +1,28 @@
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  function renderMermaidBlocks() {
+    if (typeof mermaid === 'undefined') return;
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' });
+
+    const blocks = document.querySelectorAll('pre.language-mermaid > code');
+    blocks.forEach((code, idx) => {
+      const pre = code.parentElement;
+      if (!pre || pre.dataset.mermaidRendered === '1') return;
+      const graph = document.createElement('div');
+      graph.className = 'mermaid';
+      graph.textContent = code.textContent || '';
+      graph.id = `mermaid-diagram-${idx}`;
+      pre.replaceWith(graph);
+    });
+
+    mermaid.run({ querySelector: '.mermaid' });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderMermaidBlocks);
+  } else {
+    renderMermaidBlocks();
+  }
+})();
+</script>

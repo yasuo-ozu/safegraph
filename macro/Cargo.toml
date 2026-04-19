@@ -1,0 +1,23 @@
+[package]
+name = "safegraph-macros"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.56"
+authors = ["yasuo-ozu <yasuo@ozu.email>"]
+description = "Procedural `graph!` builder macro for the safegraph graph library."
+documentation = "https://docs.rs/safegraph-macros"
+homepage = "https://github.com/yasuo-ozu/safegraph"
+repository = "https://github.com/yasuo-ozu/safegraph"
+license = "MIT"
+keywords = ["graph", "macro", "proc-macro"]
+categories = ["data-structures"]
+
+[lib]
+proc-macro = true
+path = "lib.rs"
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+template-quote = "0.4"
+proc-macro2 = "1"
+proc-macro-error = "1"

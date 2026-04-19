@@ -1,0 +1,29 @@
+error: edge `e` is used for different edges
+       
+         = help: first definition for edge `e` is here
+       
+ --> tests/ui/graph_macro_duplicate_edge_expr.rs:8:24
+  |
+8 |         {(0, 3u32)} -- e {(0, 11u32)} --> {(0, 4u32)}
+  |                        ^
+
+error[E0599]: no method named `stabilize` found for struct `LinkedAdjEdgeGraph` in the current scope
+   --> tests/ui/graph_macro_duplicate_edge_expr.rs:4:74
+    |
+  4 |     let mut g = safegraph::VecGraph::<(i64, u32), (i64, u32)>::default().stabilize();
+    |                                                                          ^^^^^^^^^ method not found in `LinkedAdjEdgeGraph<Vec<((i64, u32), NodeRepr<u32>)>, Vec<(..., ...)>>`
+    |
+   ::: /home/yasuo/ghq/github.com/yasuo-ozu/safegraph/src/graph.rs:288:8
+    |
+288 |     fn stabilize<'r, N, E>(self) -> StabilizedGraph<'r, Self, N, E>
+    |        --------- the method is available for `LinkedAdjEdgeGraph<Vec<((i64, u32), NodeRepr<u32>)>, Vec<((i64, u32), EdgeRepr<u32, u32>)>>` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `Graph` which provides `stabilize` is implemented but not in scope; perhaps you want to import it
+    |
+  3 + use safegraph::Graph;
+    |
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0599`.
