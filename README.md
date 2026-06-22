@@ -4,8 +4,8 @@
 [crates.io]: https://crates.io/crates/safegraph
 [Documentation]: https://img.shields.io/docsrs/safegraph
 [docs.rs]: https://docs.rs/safegraph/latest/
-[GitHub Actions]: https://github.com/yasuo-ozu/safegraph/actions/workflows/rust.yml/badge.svg
-[actions]: https://github.com/yasuo-ozu/safegraph/actions/workflows/rust.yml
+[GitHub Actions]: https://github.com/yasuo-ozu/safegraph/actions/workflows/ci.yml/badge.svg
+[actions]: https://github.com/yasuo-ozu/safegraph/actions/workflows/ci.yml
 
 Safegraph is a graph library focused on type-safe, stable graph manipulation APIs.
 It prevents common indexing mistakes using Rust's type system and zero-cost abstractions.
