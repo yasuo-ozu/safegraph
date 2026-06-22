@@ -50,3 +50,10 @@ harness = false
 name = "ui"
 path = "tests/ui.rs"
 harness = false
+# Excluded from the default `cargo test` set: UI snapshots capture rustc's
+# diagnostic output, which is not stable across compiler versions, so they run
+# only on a pinned toolchain — the dedicated `ui` CI job invokes them explicitly
+# via `cargo test --test ui` (which still selects this target despite `test =
+# false`). This is target selection, not a skip: the suite on floating `stable`
+# simply doesn't include them.
+test = false

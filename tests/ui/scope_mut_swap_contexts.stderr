@@ -5,6 +5,8 @@ error[E0599]: no method named `scope_mut` found for mutable reference `&mut Link
    |     ---^^^^^^^^^
    |
    = help: items from traits can only be used if the trait is in scope
+   = note: the full name for the type has been written to '$LONG_TYPE_FILE'
+   = note: consider using `--verbose` to print the full type name to the console
 help: trait `Graph` which provides `scope_mut` is implemented but not in scope; perhaps you want to import it
    |
  1 + use safegraph::Graph;
@@ -22,6 +24,8 @@ error[E0599]: no method named `scope_mut` found for mutable reference `&mut Link
    |         ---^^^^^^^^^
    |
    = help: items from traits can only be used if the trait is in scope
+   = note: the full name for the type has been written to '$LONG_TYPE_FILE'
+   = note: consider using `--verbose` to print the full type name to the console
 help: trait `Graph` which provides `scope_mut` is implemented but not in scope; perhaps you want to import it
    |
  1 + use safegraph::Graph;

@@ -1,27 +1,32 @@
 error[E0277]: the trait bound `Vec<(u32, EdgeRepr<u32, u32>)>: StableCollection` is not satisfied
- --> tests/ui/graph_macro_stable_edge.rs:4:5
-  |
-4 |     safegraph::graph!(&mut g => {1} -- e --> {2});
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-^^^^^^^^^
-  |     |                                  |
-  |     |                                  required by a bound introduced by this call
-  |     the trait `StableCollection` is not implemented for `Vec<(u32, EdgeRepr<u32, u32>)>`
-  |
-  = help: the following other types implement trait `StableCollection`:
-            BTreeMap<I, S>
-            HashMap<I, S>
-  = note: required for `LinkedAdjEdgeGraph<Vec<(u32, NodeRepr<u32>)>, Vec<(u32, ...)>>` to implement `StableEdge`
+   --> tests/ui/graph_macro_stable_edge.rs:4:5
+    |
+  4 |     safegraph::graph!(&mut g => {1} -- e --> {2});
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-^^^^^^^^^
+    |     |                                  |
+    |     |                                  required by a bound introduced by this call
+    |     the trait `StableCollection` is not implemented for `Vec<(u32, EdgeRepr<u32, u32>)>`
+    |
+help: the following other types implement trait `StableCollection`
+   --> src/collection.rs:749:1
+    |
+749 | unsafe impl<I: Copy + Eq + Ord + Hash, S> StableCollection for BTreeMap<I, S> {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `BTreeMap<I, S>`
+750 | // SAFETY: auto impl
+751 | unsafe impl<I: Copy + Eq + Ord + Hash, S> StableCollection for HashMap<I, S> {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `HashMap<I, S>`
+    = note: required for `LinkedAdjEdgeGraph<Vec<(u32, NodeRepr<u32>)>, Vec<(u32, ...)>>` to implement `StableEdge`
 note: required by a bound in `__assert_stable_edge`
- --> tests/ui/graph_macro_stable_edge.rs:4:5
-  |
-4 |     safegraph::graph!(&mut g => {1} -- e --> {2});
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-^^^^^^^^^
-  |     |                                  |
-  |     |                                  required by a bound in this function
-  |     required by this bound in `__assert_stable_edge`
-  = note: the full name for the type has been written to '$LONG_TYPE_FILE'
-  = note: consider using `--verbose` to print the full type name to the console
-  = note: this error originates in the macro `safegraph_macros::graph` which comes from the expansion of the macro `safegraph::graph` (in Nightly builds, run with -Z macro-backtrace for more info)
+   --> tests/ui/graph_macro_stable_edge.rs:4:5
+    |
+  4 |     safegraph::graph!(&mut g => {1} -- e --> {2});
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-^^^^^^^^^
+    |     |                                  |
+    |     |                                  required by a bound in this function
+    |     required by this bound in `__assert_stable_edge`
+    = note: the full name for the type has been written to '$LONG_TYPE_FILE'
+    = note: consider using `--verbose` to print the full type name to the console
+    = note: this error originates in the macro `safegraph_macros::graph` which comes from the expansion of the macro `safegraph::graph` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: aborting due to 1 previous error
 

@@ -38,6 +38,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test
 
+  # UI/`.stderr` snapshot tests compare rustc's diagnostic output verbatim, and
+  # that output is not stable across compiler versions — so they run on a PINNED
+  # toolchain, separate from the floating-`stable` `test` job above (where they
+  # are excluded via `test = false`). They are run and enforced here, not
+  # skipped. To bump the pin: install the new toolchain locally, re-bless with
+  # `BLESS=1 cargo +<ver> test --test ui`, and update the version in both places.
+  ui:
+    name: UI tests (pinned rustc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - run: cargo test --test ui
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

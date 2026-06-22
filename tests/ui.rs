@@ -3,6 +3,13 @@ use ui_test::spanned::Spanned;
 use ui_test::{dependencies::DependencyBuilder, run_tests, Config};
 
 fn main() -> ui_test::color_eyre::Result<()> {
+    // These snapshots capture rustc's diagnostic output, which is NOT stable
+    // across compiler versions (note indentation, blank lines, and the long-type
+    // note all drift between releases). The target is therefore `test = false`
+    // (see Cargo.toml): it is excluded from the default `cargo test` set — which
+    // runs on floating `stable` — and run explicitly via `cargo test --test ui`
+    // by the dedicated, version-pinned `ui` CI job. Refresh with
+    // `BLESS=1 cargo test --test ui` on that same pinned toolchain.
     let mut config = Config {
         output_conflict_handling: if std::env::var_os("BLESS").is_some() {
             ui_test::bless_output_files
@@ -48,6 +55,16 @@ fn main() -> ui_test::color_eyre::Result<()> {
     // machine-specific (absolute) and run-specific (an unstable hash), so collapse
     // the whole quoted path to a placeholder.
     config.stderr_filter(r"'[^']*\.long-type-\d+\.txt'", "'$$LONG_TYPE_FILE'");
+
+    // A diagnostic can point into `safegraph`'s own sources (e.g. a `::: …/src/
+    // graph.rs:LINE:COL` note from the blanket `Graph` impl). That note embeds
+    // the absolute path of the crate root, which differs per machine (local
+    // `…/yasuo-ozu/safegraph/src/` vs CI `/home/runner/work/safegraph/safegraph/
+    // src/`). Normalize the absolute prefix down to a relative `src/…` so the
+    // snapshots are portable. `(?-u)` selects the ASCII matcher (the bytes-regex
+    // rejects Unicode classes); `[^\s:]*` spans the path without crossing into
+    // the trailing `:LINE:COL`.
+    config.stderr_filter(r"(?-u)/[^\s:]*/src/", "src/");
 
     run_tests(config)
 }
