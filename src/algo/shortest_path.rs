@@ -246,13 +246,13 @@ where
 
     let edges: Vec<(G::NodeIx, G::NodeIx, W)> =
         <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph)
-        .map(|eix| {
-            let tail = graph.edge_tail_index_unchecked(eix);
-            let head = graph.edge_head_index_unchecked(eix);
-            let w = edge_weight(Graph::edge_unchecked(graph, eix));
-            (tail, head, w)
-        })
-        .collect();
+            .map(|eix| {
+                let tail = graph.edge_tail_index_unchecked(eix);
+                let head = graph.edge_head_index_unchecked(eix);
+                let w = edge_weight(Graph::edge_unchecked(graph, eix));
+                (tail, head, w)
+            })
+            .collect();
 
     BellmanFord {
         edges,
@@ -451,7 +451,8 @@ where
     W: Copy + Ord + Add<Output = W> + Default + Bounded,
     F: FnMut(&G::Edge) -> W,
 {
-    let nodes: Vec<G::NodeIx> = <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
+    let nodes: Vec<G::NodeIx> =
+        <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
     let inf = W::max_value();
 
     // dist[(i, j)] = shortest distance from i to j, using max_value() as infinity
@@ -641,10 +642,16 @@ where
                 for w in 0..spur_idx {
                     let from = prev_path[w];
                     let to = prev_path[w + 1];
-                    for eix in unsafe { <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, from) } {
+                    for eix in unsafe {
+                        <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
+                            self.graph, from,
+                        )
+                    } {
                         if unsafe { self.graph.edge_head_index_unchecked(eix) } == to {
                             cost = cost
-                                + (self.edge_weight)(unsafe { Graph::edge_unchecked(self.graph, eix) });
+                                + (self.edge_weight)(unsafe {
+                                    Graph::edge_unchecked(self.graph, eix)
+                                });
                             break;
                         }
                     }
@@ -677,7 +684,11 @@ where
                     if node == self.goal {
                         break;
                     }
-                    for eix in unsafe { <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, node) } {
+                    for eix in unsafe {
+                        <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
+                            self.graph, node,
+                        )
+                    } {
                         let target = unsafe { self.graph.edge_head_index_unchecked(eix) };
                         if visited.contains(&target) || root_nodes.contains(&target) {
                             continue;
@@ -685,7 +696,8 @@ where
                         if excluded_edges.contains(&(node, target)) {
                             continue;
                         }
-                        let w = (self.edge_weight)(unsafe { Graph::edge_unchecked(self.graph, eix) });
+                        let w =
+                            (self.edge_weight)(unsafe { Graph::edge_unchecked(self.graph, eix) });
                         let new_dist = cost + w;
                         let is_shorter = match dist_map.get(&target) {
                             Some(&(d, _)) => new_dist < d,
@@ -778,7 +790,8 @@ mod tests {
     #[test]
     fn dijkstra_with_goal() {
         let (g, [a, _, c, _]) = weighted_vecgraph();
-        let result = unsafe { dijkstra_unchecked(g.unsafe_assert_stable_node(), a, Some(c), |&w| w) };
+        let result =
+            unsafe { dijkstra_unchecked(g.unsafe_assert_stable_node(), a, Some(c), |&w| w) };
         assert_eq!(result[&c].0, 3);
     }
 
@@ -798,9 +811,10 @@ mod tests {
     #[test]
     fn bellman_ford_basic() {
         let (g, [a, b, c, d]) = weighted_vecgraph();
-        let result = unsafe { bellman_ford_unchecked(g.unsafe_assert_stable_node(), a, |&w| w as i64) }
-            .finish()
-            .unwrap();
+        let result =
+            unsafe { bellman_ford_unchecked(g.unsafe_assert_stable_node(), a, |&w| w as i64) }
+                .finish()
+                .unwrap();
         assert_eq!(result[&a].0, 0);
         assert_eq!(result[&b].0, 1);
         assert_eq!(result[&c].0, 3);
@@ -825,7 +839,8 @@ mod tests {
     #[test]
     fn astar_basic() {
         let (g, [a, b, c, d]) = weighted_vecgraph();
-        let result = unsafe { astar_unchecked(g.unsafe_assert_stable_node(), a, d, |&w| w, |_| 0u32) };
+        let result =
+            unsafe { astar_unchecked(g.unsafe_assert_stable_node(), a, d, |&w| w, |_| 0u32) };
         let (cost, path) = result.unwrap();
         assert_eq!(cost, 4);
         assert_eq!(path, vec![a, b, c, d]);
@@ -888,7 +903,8 @@ mod tests {
             InsertEdge::insert_edge_unchecked(&mut g, 2, [a, c]).unwrap();
             InsertEdge::insert_edge_unchecked(&mut g, 3, [c, d]).unwrap();
 
-            let paths = k_shortest_paths_unchecked(g.unsafe_assert_stable_node(), a, d, 3, |&w| w).finish();
+            let paths =
+                k_shortest_paths_unchecked(g.unsafe_assert_stable_node(), a, d, 3, |&w| w).finish();
             assert_eq!(paths.len(), 2); // Only 2 paths exist
             assert_eq!(paths[0].0, 5); // A->C->D = 2+3
             assert_eq!(paths[1].0, 6); // A->B->D = 1+5
@@ -898,7 +914,9 @@ mod tests {
     #[test]
     fn k_shortest_paths_single() {
         let (g, [a, _, _, d]) = weighted_vecgraph();
-        let paths = unsafe { k_shortest_paths_unchecked(g.unsafe_assert_stable_node(), a, d, 1, |&w| w) }.finish();
+        let paths =
+            unsafe { k_shortest_paths_unchecked(g.unsafe_assert_stable_node(), a, d, 1, |&w| w) }
+                .finish();
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0].0, 4); // Shortest: A->B->C->D = 1+2+1
     }

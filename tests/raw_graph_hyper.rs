@@ -63,8 +63,11 @@ where
 
             // `walks_from` yields a hyperedge once per OTHER endpoint, so the
             // 3-edge incident on `a` shows up twice (paired with b and c).
-            let walks_a: Vec<_> =
-                ctx.walks_from(a).map(|w| w.get()).map(|(eix, _, nix)| (eix, nix)).collect();
+            let walks_a: Vec<_> = ctx
+                .walks_from(a)
+                .map(|w| w.get())
+                .map(|(eix, _, nix)| (eix, nix))
+                .collect();
             assert_eq!(walks_a.len(), 2);
             for (eix, _) in &walks_a {
                 assert_eq!(*eix, e0);

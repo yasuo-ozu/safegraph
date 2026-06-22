@@ -36,7 +36,9 @@ use criterion::Bencher;
 use safegraph::graph::capability::InsertNode;
 use safegraph::graph::{Graph, GraphOperation, GraphProperty};
 use safegraph::raw_graph::flat_adj_edge::{FlatAdjEdgeGraph, NodeRepr as FlatNodeRepr, TNone};
-use safegraph::raw_graph::linked_adj_edge::{EdgeRepr, LinkedAdjEdgeGraph, NodeRepr as LinkedNodeRepr};
+use safegraph::raw_graph::linked_adj_edge::{
+    EdgeRepr, LinkedAdjEdgeGraph, NodeRepr as LinkedNodeRepr,
+};
 
 use crate::common::{edge_is_victim, node_is_victim, Workload};
 
@@ -192,7 +194,9 @@ pub mod sg_vec_stabilized {
     }
 
     pub fn out_degree_sum(g: &G) -> usize {
-        Graph::node_indices(g).map(|nix| g.walks_from(nix).count()).sum()
+        Graph::node_indices(g)
+            .map(|nix| g.walks_from(nix).count())
+            .sum()
     }
 
     pub fn access_indices(g: &G, order: &[usize]) -> Vec<NodeIx> {
@@ -223,7 +227,10 @@ pub mod sg_vec_stabilized {
     }
 
     pub fn counts(g: &G) -> (usize, usize) {
-        (Graph::node_indices(g).count(), Graph::edge_indices(g).count())
+        (
+            Graph::node_indices(g).count(),
+            Graph::edge_indices(g).count(),
+        )
     }
 }
 
@@ -272,7 +279,9 @@ pub mod sg_vec_checked {
         // checked `g.node`.
         for nix in GraphOperation::node_indices(g) {
             total = total.wrapping_add(*g.node(nix));
-            for (_, e, _) in unsafe { GraphOperation::walks_from_unchecked(g, nix) }.map(|w| w.get()) {
+            for (_, e, _) in
+                unsafe { GraphOperation::walks_from_unchecked(g, nix) }.map(|w| w.get())
+            {
                 total = total.wrapping_add(*e);
             }
         }
@@ -440,16 +449,14 @@ pub mod pg_stable {
     }
 
     pub fn remove_edge_loop(g: &mut G) {
-        let victims: Vec<EdgeIndex> =
-            g.edge_indices().filter(|&e| edge_is_victim(g[e])).collect();
+        let victims: Vec<EdgeIndex> = g.edge_indices().filter(|&e| edge_is_victim(g[e])).collect();
         for e in victims {
             g.remove_edge(e);
         }
     }
 
     pub fn remove_node_loop(g: &mut G) {
-        let victims: Vec<NodeIndex> =
-            g.node_indices().filter(|&n| node_is_victim(g[n])).collect();
+        let victims: Vec<NodeIndex> = g.node_indices().filter(|&n| node_is_victim(g[n])).collect();
         for n in victims {
             g.remove_node(n);
         }

@@ -132,8 +132,12 @@ where
     fn next(&mut self) -> Option<G::NodeIx> {
         let node = self.stack.pop()?;
         // SAFETY: node came from the graph. Caller guarantees no modification.
-        for eix in unsafe { <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, node) } {
-            for endpoint in unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix) } {
+        for eix in unsafe {
+            <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, node)
+        } {
+            for endpoint in unsafe {
+                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix)
+            } {
                 if endpoint != node && self.visited.insert(endpoint) {
                     self.stack.push(endpoint);
                 }
@@ -214,10 +218,19 @@ where
             *expanded = true;
             let node = *node;
             // SAFETY: node came from the graph. Caller guarantees no modification.
-            let succs: Vec<G::NodeIx> = unsafe { <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, node) }
-                .flat_map(|eix| unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix) }.into_iter())
-                .filter(|&ep| ep != node)
-                .collect();
+            let succs: Vec<G::NodeIx> = unsafe {
+                <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
+                    self.graph, node,
+                )
+            }
+            .flat_map(|eix| {
+                unsafe {
+                    <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix)
+                }
+                .into_iter()
+            })
+            .filter(|&ep| ep != node)
+            .collect();
             // Push in reverse so first successor is on top
             for succ in succs.into_iter().rev() {
                 if self.visited.insert(succ) {

@@ -203,8 +203,8 @@ fn intersect(idom: &[Option<usize>], mut a: usize, mut b: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::BTreeGraph;
     use crate::graph::Graph;
+    use crate::BTreeGraph;
 
     #[test]
     fn dominators_linear() {

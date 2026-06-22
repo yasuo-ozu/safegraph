@@ -12,8 +12,8 @@
 //! [`LinkedAdjEdgeGraph`]: safegraph::raw_graph::linked_adj_edge::LinkedAdjEdgeGraph
 
 use ir_assert::assert_ir;
-use safegraph::VecGraph;
 use safegraph::graph::Graph;
+use safegraph::VecGraph;
 
 // VecGraph's NodeIx and EdgeIx are both `u32`.
 
@@ -23,9 +23,7 @@ use safegraph::graph::Graph;
 fn vec_edges_from_count_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
-        |g: &VecGraph<u32, u32>, n: u32| -> usize {
-            unsafe { g.edges_from_unchecked(n) }.count()
-        },
+        |g: &VecGraph<u32, u32>, n: u32| -> usize { unsafe { g.edges_from_unchecked(n) }.count() },
     );
 }
 
@@ -33,9 +31,7 @@ fn vec_edges_from_count_no_calls() {
 fn vec_edges_of_count_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
-        |g: &VecGraph<u32, u32>, n: u32| -> usize {
-            unsafe { g.edges_of_unchecked(n) }.count()
-        },
+        |g: &VecGraph<u32, u32>, n: u32| -> usize { unsafe { g.edges_of_unchecked(n) }.count() },
     );
 }
 
@@ -84,10 +80,14 @@ fn vec_walks_to_sum_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
         |g: &VecGraph<u32, u32>, n: u32| -> u32 {
-            unsafe { g.unsafe_assert_stable_edge().unsafe_assert_stable_node().walks_to_unchecked(n) }
-                .map(|w| w.get())
-                .map(|(_, _, e)| *e)
-                .sum::<u32>()
+            unsafe {
+                g.unsafe_assert_stable_edge()
+                    .unsafe_assert_stable_node()
+                    .walks_to_unchecked(n)
+            }
+            .map(|w| w.get())
+            .map(|(_, _, e)| *e)
+            .sum::<u32>()
         },
     );
 }
@@ -128,7 +128,9 @@ fn vec_edge_head_index_no_calls() {
 fn vec_edge_tail_load_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
-        |g: &VecGraph<u32, u32>, e: u32| -> u32 { *unsafe { g.unsafe_assert_stable_node().edge_tail_unchecked(e) } },
+        |g: &VecGraph<u32, u32>, e: u32| -> u32 {
+            *unsafe { g.unsafe_assert_stable_node().edge_tail_unchecked(e) }
+        },
     );
 }
 
@@ -136,7 +138,9 @@ fn vec_edge_tail_load_no_calls() {
 fn vec_edge_head_load_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
-        |g: &VecGraph<u32, u32>, e: u32| -> u32 { *unsafe { g.unsafe_assert_stable_node().edge_head_unchecked(e) } },
+        |g: &VecGraph<u32, u32>, e: u32| -> u32 {
+            *unsafe { g.unsafe_assert_stable_node().edge_head_unchecked(e) }
+        },
     );
 }
 
@@ -166,9 +170,7 @@ fn vec_edge_head_indices_first_no_calls() {
 fn vec_node_set_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
-        |g: &mut VecGraph<u32, u32>, n: u32, v: u32| {
-            unsafe { *g.node_unchecked_mut(n) = v }
-        },
+        |g: &mut VecGraph<u32, u32>, n: u32, v: u32| { unsafe { *g.node_unchecked_mut(n) = v } },
     );
 }
 
@@ -176,9 +178,7 @@ fn vec_node_set_no_calls() {
 fn vec_edge_set_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
-        |g: &mut VecGraph<u32, u32>, e: u32, v: u32| {
-            unsafe { *g.edge_unchecked_mut(e) = v }
-        },
+        |g: &mut VecGraph<u32, u32>, e: u32, v: u32| { unsafe { *g.edge_unchecked_mut(e) = v } },
     );
 }
 
@@ -209,7 +209,9 @@ fn vec_edges_to_first_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
         |g: &VecGraph<u32, u32>, n: u32| -> Option<u32> {
-            unsafe { g.unsafe_assert_stable_edge().edges_to_unchecked(n) }.next().copied()
+            unsafe { g.unsafe_assert_stable_edge().edges_to_unchecked(n) }
+                .next()
+                .copied()
         },
     );
 }
@@ -229,9 +231,13 @@ fn vec_walks_to_first_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
         |g: &VecGraph<u32, u32>, n: u32| -> Option<u32> {
-            unsafe { g.unsafe_assert_stable_edge().unsafe_assert_stable_node().walks_to_unchecked(n) }
-                .next()
-                .map(|w| w.into_parts().1)
+            unsafe {
+                g.unsafe_assert_stable_edge()
+                    .unsafe_assert_stable_node()
+                    .walks_to_unchecked(n)
+            }
+            .next()
+            .map(|w| w.into_parts().1)
         },
     );
 }
@@ -262,9 +268,13 @@ fn wide_walks_to_first_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
         |g: &VecGraph<Wide, Wide>, n: u32| -> Option<u32> {
-            unsafe { g.unsafe_assert_stable_edge().unsafe_assert_stable_node().walks_to_unchecked(n) }
-                .next()
-                .map(|w| w.into_parts().1)
+            unsafe {
+                g.unsafe_assert_stable_edge()
+                    .unsafe_assert_stable_node()
+                    .walks_to_unchecked(n)
+            }
+            .next()
+            .map(|w| w.into_parts().1)
         },
     );
 }
@@ -273,6 +283,8 @@ fn wide_walks_to_first_no_calls() {
 fn wide_edge_tail_load_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
-        |g: &VecGraph<Wide, Wide>, e: u32| -> u32 { unsafe { g.unsafe_assert_stable_node().edge_tail_index_unchecked(e) } },
+        |g: &VecGraph<Wide, Wide>, e: u32| -> u32 {
+            unsafe { g.unsafe_assert_stable_node().edge_tail_index_unchecked(e) }
+        },
     );
 }

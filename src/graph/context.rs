@@ -108,7 +108,9 @@ where
         self.inner.next().map(|wi| {
             let (eix, edge_ptr, nix) = wi.into_parts();
             // SAFETY: `edge_ptr` is valid for `'r` (from the inner `WalkItem`).
-            unsafe { WalkItem::from_parts(EdgeIx(PhantomData, eix), edge_ptr, NodeIx(PhantomData, nix)) }
+            unsafe {
+                WalkItem::from_parts(EdgeIx(PhantomData, eix), edge_ptr, NodeIx(PhantomData, nix))
+            }
         })
     }
 }
@@ -143,7 +145,11 @@ where
             let (eix, edge_ptr, nix) = wi.into_parts();
             // SAFETY: `edge_ptr` is uniquely valid for `'r` (from the inner item).
             unsafe {
-                WalkItemMut::from_parts(EdgeIx(PhantomData, eix), edge_ptr, NodeIx(PhantomData, nix))
+                WalkItemMut::from_parts(
+                    EdgeIx(PhantomData, eix),
+                    edge_ptr,
+                    NodeIx(PhantomData, nix),
+                )
             }
         })
     }
@@ -557,7 +563,11 @@ where
                 let (nix, eix, edge_ptr) = wi.into_parts();
                 // SAFETY: `edge_ptr` is valid for `'r` (from the inner item).
                 unsafe {
-                    WalkItemTo::from_parts(NodeIx(PhantomData, nix), EdgeIx(PhantomData, eix), edge_ptr)
+                    WalkItemTo::from_parts(
+                        NodeIx(PhantomData, nix),
+                        EdgeIx(PhantomData, eix),
+                        edge_ptr,
+                    )
                 }
             }) as fn(_) -> _,
         )

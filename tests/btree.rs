@@ -1,6 +1,6 @@
-use safegraph::BTreeGraph;
 use safegraph::graph::capability::*;
 use safegraph::graph::prelude::*;
+use safegraph::BTreeGraph;
 
 fn diamond_btree() -> BTreeGraph<u32, u32> {
     let mut g = BTreeGraph::<u32, u32>::default();

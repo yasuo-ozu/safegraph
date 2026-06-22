@@ -122,7 +122,13 @@ where
 }
 
 impl<'r, G> Iterator
-    for Bridges<'r, G, G::NodeIx, <G as crate::graph::GraphOperation<'r>>::NodeIndices, BridgeFrame<G>>
+    for Bridges<
+        'r,
+        G,
+        G::NodeIx,
+        <G as crate::graph::GraphOperation<'r>>::NodeIndices,
+        BridgeFrame<G>,
+    >
 where
     G: Graph + Bigraph + StableEdge + ?Sized,
 {
@@ -316,10 +322,7 @@ where
 }
 
 /// Collect all undirected neighbors of a node (both successors and predecessors).
-unsafe fn collect_undirected_neighbors<G>(
-    graph: &G,
-    node: G::NodeIx,
-) -> Vec<(G::EdgeIx, G::NodeIx)>
+unsafe fn collect_undirected_neighbors<G>(graph: &G, node: G::NodeIx) -> Vec<(G::EdgeIx, G::NodeIx)>
 where
     G: Graph + Bigraph + ?Sized,
 {

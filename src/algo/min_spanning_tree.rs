@@ -162,9 +162,13 @@ where
         loop {
             // Try to get next MST edge from current component
             while let Some(EdgeCandidate { edge_ix, .. }) = self.heap.pop() {
-                let eps: Vec<G::NodeIx> = unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, edge_ix) }
-                    .into_iter()
-                    .collect();
+                let eps: Vec<G::NodeIx> = unsafe {
+                    <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
+                        self.graph, edge_ix,
+                    )
+                }
+                .into_iter()
+                .collect();
                 let (a, b) = (eps[0], eps[1]);
 
                 let new_node = if !self.in_mst.contains(&a) {
@@ -224,7 +228,10 @@ unsafe fn add_incident_edges<G, W, F>(
     F: Fn(&G::Edge) -> W,
 {
     for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, node) {
-        let eps: Vec<G::NodeIx> = <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix).into_iter().collect();
+        let eps: Vec<G::NodeIx> =
+            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix)
+                .into_iter()
+                .collect();
         let (a, b) = (eps[0], eps[1]);
         if (a == node && !in_mst.contains(&b)) || (b == node && !in_mst.contains(&a)) {
             let w = edge_weight(Graph::edge_unchecked(graph, eix));

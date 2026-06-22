@@ -178,7 +178,11 @@ fn run_sanity(w: &Workload) {
             let g = ad::build(w);
             assert_eq!(ad::counts(&g), (n, m), concat!($name, " counts"));
             assert_eq!(ad::traverse_sum(&g), checksum, concat!($name, " checksum"));
-            assert_eq!(ad::out_degree_sum(&g), m, concat!($name, " out-degree coverage"));
+            assert_eq!(
+                ad::out_degree_sum(&g),
+                m,
+                concat!($name, " out-degree coverage")
+            );
 
             let mut ge = g.clone();
             ad::remove_edge_set(&mut ge);

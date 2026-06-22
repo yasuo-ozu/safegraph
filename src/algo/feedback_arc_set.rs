@@ -85,7 +85,8 @@ where
     // 1. Build a linear ordering of nodes (eagerly)
     // 2. Edges going "backward" in the ordering form the feedback arc set (lazily)
 
-    let nodes: Vec<G::NodeIx> = <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
+    let nodes: Vec<G::NodeIx> =
+        <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
 
     let position = if nodes.is_empty() {
         HashMap::new()
@@ -145,7 +146,11 @@ where
                 for source in sources {
                     remaining.remove(&source);
                     left.push_back(source);
-                    for succ_eix in unsafe { <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, source) } {
+                    for succ_eix in unsafe {
+                        <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
+                            graph, source,
+                        )
+                    } {
                         let succ = unsafe { graph.edge_head_index_unchecked(succ_eix) };
                         if remaining.contains(&succ) && succ != source {
                             *cur_in.get_mut(&succ).unwrap() -= 1;
@@ -168,7 +173,9 @@ where
             remaining.remove(&best);
             left.push_back(best);
 
-            for succ_eix in unsafe { <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, best) } {
+            for succ_eix in unsafe {
+                <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, best)
+            } {
                 let succ = unsafe { graph.edge_head_index_unchecked(succ_eix) };
                 if remaining.contains(&succ) && succ != best {
                     *cur_in.get_mut(&succ).unwrap() -= 1;

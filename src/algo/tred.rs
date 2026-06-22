@@ -79,7 +79,9 @@ pub struct DagTransitiveReduction<'r, G: ?Sized, E> {
 }
 
 /// Returns an iterator over the edges in the transitive reduction of a DAG.
-pub fn dag_transitive_reduction<'r, G>(graph: &'r G) -> DagTransitiveReduction<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices>
+pub fn dag_transitive_reduction<'r, G>(
+    graph: &'r G,
+) -> DagTransitiveReduction<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices>
 where
     G: Graph + Directed<'r> + Bigraph + StableEdge + ?Sized,
 {
@@ -89,7 +91,8 @@ where
     }
 }
 
-impl<'r, G> Iterator for DagTransitiveReduction<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices>
+impl<'r, G> Iterator
+    for DagTransitiveReduction<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices>
 where
     G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
 {
@@ -102,7 +105,11 @@ where
             let head = unsafe { self.graph.edge_head_index_unchecked(eix) };
 
             let mut reachable_via_other = false;
-            for other_eix in unsafe { <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, tail) } {
+            for other_eix in unsafe {
+                <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
+                    self.graph, tail,
+                )
+            } {
                 if other_eix == eix {
                     continue;
                 }
@@ -142,7 +149,8 @@ pub fn dag_transitive_closure<'r, G>(graph: &'r G) -> DagTransitiveClosure<'r, G
 where
     G: Graph + Directed<'r> + StableNode + ?Sized,
 {
-    let nodes: Vec<G::NodeIx> = <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
+    let nodes: Vec<G::NodeIx> =
+        <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
     DagTransitiveClosure {
         graph,
         nodes,

@@ -97,7 +97,9 @@ pub struct GreedyMatching<'r, G: ?Sized, E, N> {
 }
 
 /// Returns an iterator over edges forming a greedy maximal matching.
-pub fn greedy_matching<'r, G>(graph: &'r G) -> GreedyMatching<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices, G::NodeIx>
+pub fn greedy_matching<'r, G>(
+    graph: &'r G,
+) -> GreedyMatching<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices, G::NodeIx>
 where
     G: Graph + Bigraph + StableEdge + ?Sized,
 {
@@ -108,7 +110,8 @@ where
     }
 }
 
-impl<'r, G> Iterator for GreedyMatching<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices, G::NodeIx>
+impl<'r, G> Iterator
+    for GreedyMatching<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices, G::NodeIx>
 where
     G: Graph + Bigraph + StableEdge + ?Sized,
 {
@@ -117,9 +120,11 @@ where
     fn next(&mut self) -> Option<G::EdgeIx> {
         loop {
             let eix = self.edges.next()?;
-            let eps: Vec<G::NodeIx> = unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix) }
-                .into_iter()
-                .collect();
+            let eps: Vec<G::NodeIx> = unsafe {
+                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix)
+            }
+            .into_iter()
+            .collect();
             let (a, b) = (eps[0], eps[1]);
 
             // Skip self-loops
@@ -151,9 +156,10 @@ where
     let mut adj: Adjacency<G> = HashMap::new();
 
     for eix in <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph) {
-        let eps: Vec<G::NodeIx> = unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix) }
-            .into_iter()
-            .collect();
+        let eps: Vec<G::NodeIx> =
+            unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix) }
+                .into_iter()
+                .collect();
         let (a, b) = (eps[0], eps[1]);
         if a == b {
             continue; // Skip self-loops
@@ -167,9 +173,10 @@ where
     let mut in_matching: HashSet<G::EdgeIx> = HashSet::new();
 
     for eix in <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph) {
-        let eps: Vec<G::NodeIx> = unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix) }
-            .into_iter()
-            .collect();
+        let eps: Vec<G::NodeIx> =
+            unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix) }
+                .into_iter()
+                .collect();
         let (a, b) = (eps[0], eps[1]);
         if a == b {
             continue;
@@ -183,9 +190,10 @@ where
 
     // Augment: find augmenting paths from free (unmatched) nodes
     loop {
-        let free_nodes: Vec<G::NodeIx> = <_ as crate::graph::GraphOperation<'_>>::node_indices(graph)
-            .filter(|n| !match_of.contains_key(n))
-            .collect();
+        let free_nodes: Vec<G::NodeIx> =
+            <_ as crate::graph::GraphOperation<'_>>::node_indices(graph)
+                .filter(|n| !match_of.contains_key(n))
+                .collect();
 
         let mut found_augmenting = false;
 
@@ -209,9 +217,11 @@ where
                 // Rebuild match_of from in_matching
                 match_of.clear();
                 for &eix in &in_matching {
-                    let eps: Vec<G::NodeIx> = unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix) }
-                        .into_iter()
-                        .collect();
+                    let eps: Vec<G::NodeIx> = unsafe {
+                        <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix)
+                    }
+                    .into_iter()
+                    .collect();
                     let (a, b) = (eps[0], eps[1]);
                     match_of.insert(a, (eix, b));
                     match_of.insert(b, (eix, a));

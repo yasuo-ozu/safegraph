@@ -122,8 +122,7 @@ fn graph_macro_connects_edges_from_inserted_nodes() {
     let n0 = GraphOperation::node_indices(&g).next().unwrap();
     // `VecGraph` is not `StableEdge`, so use the raw `GraphOperation` method
     // (disambiguates from the `StableEdge`-bounded `Graph::…` sibling).
-    let out: Vec<_> =
-        unsafe { GraphOperation::edge_indices_from_unchecked(&g, n0) }.collect();
+    let out: Vec<_> = unsafe { GraphOperation::edge_indices_from_unchecked(&g, n0) }.collect();
     assert_eq!(out.len(), 1);
 }
 

@@ -20,10 +20,10 @@ use std::fmt::{self, Debug, Display, Formatter};
 
 use sprs::{CsMat, TriMat};
 
-use crate::graph::GraphProperty;
 use crate::graph::capability::{Bigraph, Directed, StableEdge, StableNode};
 use crate::graph::operation::GraphOperation;
 use crate::graph::walk_item::{WalkItem, WalkItemTo};
+use crate::graph::GraphProperty;
 
 /// Edge index = `(head, tail)` matrix coordinates.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -132,7 +132,9 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
     }
 
     fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool {
-        self.edges.get(edge_ix.0 as usize, edge_ix.1 as usize).is_some()
+        self.edges
+            .get(edge_ix.0 as usize, edge_ix.1 as usize)
+            .is_some()
     }
 
     fn len_node(&self) -> usize {
@@ -191,10 +193,7 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
     }
 
     type EdgeIndicesOf = std::vec::IntoIter<EdgeIx>;
-    unsafe fn edge_indices_of_unchecked(
-        &'r self,
-        node_ix: Self::NodeIx,
-    ) -> Self::EdgeIndicesOf {
+    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesOf {
         let row = node_ix as usize;
         let mut out = Vec::new();
         if let Some(view) = self.edges.outer_view(row) {
@@ -230,7 +229,11 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
                     // of self.edges' data() which also lives for 'r.
                     &*(val as *const E)
                 };
-                out.push(WalkItem::new(EdgeIx(row as u32, col as u32), val_ref, col as u32));
+                out.push(WalkItem::new(
+                    EdgeIx(row as u32, col as u32),
+                    val_ref,
+                    col as u32,
+                ));
             }
         }
         out.into_iter()
@@ -243,7 +246,11 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
         if let Some(view) = self.edges.outer_view(row) {
             for (col, val) in view.iter() {
                 let val_ref: &'r E = unsafe { &*(val as *const E) };
-                out.push(WalkItem::new(EdgeIx(row as u32, col as u32), val_ref, col as u32));
+                out.push(WalkItem::new(
+                    EdgeIx(row as u32, col as u32),
+                    val_ref,
+                    col as u32,
+                ));
             }
         }
         for r in 0..self.edges.rows() {
@@ -254,7 +261,11 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
                 for (col, val) in view.iter() {
                     if col == row {
                         let val_ref: &'r E = unsafe { &*(val as *const E) };
-                        out.push(WalkItem::new(EdgeIx(r as u32, col as u32), val_ref, r as u32));
+                        out.push(WalkItem::new(
+                            EdgeIx(r as u32, col as u32),
+                            val_ref,
+                            r as u32,
+                        ));
                     }
                 }
             }
@@ -313,10 +324,7 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
 
 impl<'r, N: 'r, E: 'r> Directed<'r> for CsMatGraph<N, E> {
     type EdgeIndicesTo = std::vec::IntoIter<EdgeIx>;
-    unsafe fn edge_indices_to_unchecked(
-        &'r self,
-        node_ix: Self::NodeIx,
-    ) -> Self::EdgeIndicesTo {
+    unsafe fn edge_indices_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesTo {
         // Scan every row for `col == node_ix`. O(nnz). A CSC transpose
         // view would make this O(in-degree) — left as a future enhancement.
         let target = node_ix as usize;
@@ -342,7 +350,11 @@ impl<'r, N: 'r, E: 'r> Directed<'r> for CsMatGraph<N, E> {
                 for (col, val) in view.iter() {
                     if col == target {
                         let val_ref: &'r E = unsafe { &*(val as *const E) };
-                        out.push(WalkItemTo::new(r as u32, EdgeIx(r as u32, col as u32), val_ref));
+                        out.push(WalkItemTo::new(
+                            r as u32,
+                            EdgeIx(r as u32, col as u32),
+                            val_ref,
+                        ));
                     }
                 }
             }
@@ -371,4 +383,3 @@ impl<'r, N: 'r, E: 'r> Directed<'r> for CsMatGraph<N, E> {
 // is fixed at construction, so `EdgeIx(row, col)` is also stable.
 unsafe impl<N, E> StableNode for CsMatGraph<N, E> {}
 unsafe impl<N, E> StableEdge for CsMatGraph<N, E> {}
-

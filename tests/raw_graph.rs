@@ -18,7 +18,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
-use safegraph::VecGraph;
 use safegraph::graph::capability::{
     Bigraph, Directed, InsertEdge, InsertNode, RemoveNode, StableEdge, StableNode, UniqueEdge,
     UniqueNode, UpdateEdge, UpdateNode,
@@ -34,6 +33,7 @@ use safegraph::raw_graph::linked_adj_edge::{
 };
 #[cfg(feature = "matrix")]
 use safegraph::raw_graph::matrix::{CsMatGraph, EdgeIx as MatrixEdgeIx};
+use safegraph::VecGraph;
 
 // ---------------------------------------------------------------------------
 // Generic read-only checks. Operate on any safe `Graph` view (in practice a
@@ -87,17 +87,29 @@ where
     assert_eq!(from_a_eix, vec![e0]);
     let from_a_edges: Vec<u32> = ctx.edges_from(a).copied().collect();
     assert_eq!(from_a_edges, vec![100]);
-    let walks_a: Vec<_> = ctx.walks_from(a).map(|w| w.get()).map(|(eix, _, nix)| (eix, nix)).collect();
+    let walks_a: Vec<_> = ctx
+        .walks_from(a)
+        .map(|w| w.get())
+        .map(|(eix, _, nix)| (eix, nix))
+        .collect();
     assert_eq!(walks_a, vec![(e0, b)]);
     let from_c: Vec<_> = ctx.edge_indices_from(c).collect();
-    assert!(from_c.is_empty(), "expected no outgoing from c: {:?}", from_c);
+    assert!(
+        from_c.is_empty(),
+        "expected no outgoing from c: {:?}",
+        from_c
+    );
 
     // -- incoming chain
     let to_c_eix: Vec<_> = ctx.edge_indices_to(c).collect();
     assert_eq!(to_c_eix, vec![e1]);
     let to_c_edges: Vec<u32> = ctx.edges_to(c).copied().collect();
     assert_eq!(to_c_edges, vec![200]);
-    let walks_c: Vec<_> = ctx.walks_to(c).map(|w| w.get()).map(|(src, eix, _)| (src, eix)).collect();
+    let walks_c: Vec<_> = ctx
+        .walks_to(c)
+        .map(|w| w.get())
+        .map(|(src, eix, _)| (src, eix))
+        .collect();
     assert_eq!(walks_c, vec![(b, e1)]);
     let to_a: Vec<_> = ctx.edge_indices_to(a).collect();
     assert!(to_a.is_empty(), "expected no incoming to a: {:?}", to_a);
@@ -147,7 +159,11 @@ where
     assert!(Graph::contains_edge_index(ctx, e0));
 
     // -- walks_of yields both incidents of `b`
-    let mut walks_b: Vec<u32> = ctx.walks_of(b).map(|w| w.get()).map(|(_, _, nix)| *ctx.node(nix)).collect();
+    let mut walks_b: Vec<u32> = ctx
+        .walks_of(b)
+        .map(|w| w.get())
+        .map(|(_, _, nix)| *ctx.node(nix))
+        .collect();
     walks_b.sort();
     assert_eq!(walks_b, vec![10, 30]);
 }
@@ -270,7 +286,11 @@ where
         });
         taken_e.sort_unstable();
         assert!(taken_n.is_empty());
-        assert_eq!(taken_e, vec![100, 200, 300, 400], "every requested edge returned once");
+        assert_eq!(
+            taken_e,
+            vec![100, 200, 300, 400],
+            "every requested edge returned once"
+        );
         let (n, e) = g.scope(|ctx| (ctx.nodes().count(), ctx.edges().count()));
         assert_eq!((n, e), (5, 0));
     }
@@ -293,9 +313,12 @@ where
         assert_eq!(taken_n, vec![1, 3], "both requested nodes returned");
         assert_eq!(taken_e, vec![100, 400], "both explicit edges returned once");
         let (n, e) = g.scope(|ctx| (ctx.nodes().count(), ctx.edges().count()));
-        assert_eq!((n, e), (3, 0), "c,a removed; all edges gone (cascade + explicit)");
+        assert_eq!(
+            (n, e),
+            (3, 0),
+            "c,a removed; all edges gone (cascade + explicit)"
+        );
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -380,9 +403,15 @@ where
         // every raw_graph backend (the mutable walk machinery is a TODO).
         // Verify the methods exist, can be called, and don't yield anything.
         let walks_from: Vec<_> = ctx.walks_from_mut(a).map(|w| w.into_parts().0).collect();
-        assert!(walks_from.is_empty(), "walks_from_mut is unimplemented (yields empty)");
+        assert!(
+            walks_from.is_empty(),
+            "walks_from_mut is unimplemented (yields empty)"
+        );
         let walks_of: Vec<_> = ctx.walks_of_mut(b).map(|w| w.into_parts().0).collect();
-        assert!(walks_of.is_empty(), "walks_of_mut is unimplemented (yields empty)");
+        assert!(
+            walks_of.is_empty(),
+            "walks_of_mut is unimplemented (yields empty)"
+        );
     });
 }
 
@@ -529,10 +558,18 @@ type BTreeLinkedG = LinkedAdjEdgeGraph<
 type VecFlatG = FlatAdjEdgeGraph<Vec<(u32, FlatNodeRepr<Vec<(u32, u32)>, TNone>)>>;
 type BTreeFlatG = FlatAdjEdgeGraph<BTreeMap<u32, FlatNodeRepr<BTreeMap<u32, u32>, TNone>>>;
 // Maintained reverse index: IS = Vec (insertion order) and IS = BTreeSet (ordered).
-type VecFlatVecISG =
-    FlatAdjEdgeGraph<Vec<(u32, FlatNodeRepr<Vec<(u32, u32)>, Vec<FlatEdgeIx<u32, u32>>>)>>;
-type VecFlatBSetG =
-    FlatAdjEdgeGraph<Vec<(u32, FlatNodeRepr<Vec<(u32, u32)>, BTreeSet<FlatEdgeIx<u32, u32>>>)>>;
+type VecFlatVecISG = FlatAdjEdgeGraph<
+    Vec<(
+        u32,
+        FlatNodeRepr<Vec<(u32, u32)>, Vec<FlatEdgeIx<u32, u32>>>,
+    )>,
+>;
+type VecFlatBSetG = FlatAdjEdgeGraph<
+    Vec<(
+        u32,
+        FlatNodeRepr<Vec<(u32, u32)>, BTreeSet<FlatEdgeIx<u32, u32>>>,
+    )>,
+>;
 
 backend!(linked_adj_edge_vec, VecGraph<u32, u32>);
 backend!(linked_adj_edge_btree, BTreeLinkedG);
@@ -716,7 +753,11 @@ where
         "directed edge_indices_from(a)"
     );
     let from_b = edge_values(g, g.edge_indices_from(ix.b));
-    assert_eq!(from_b, BTreeSet::from([40]), "directed edge_indices_from(b)");
+    assert_eq!(
+        from_b,
+        BTreeSet::from([40]),
+        "directed edge_indices_from(b)"
+    );
     let from_c = edge_values(g, g.edge_indices_from(ix.c));
     assert!(from_c.is_empty(), "directed edge_indices_from(c)");
 
@@ -761,7 +802,10 @@ where
     // incident edge — exactly what the directed `edge_indices_of(nix)` returns.
     // Self-loops appear once, both parallel edges show up regardless of
     // direction.
-    let from_a_vec: Vec<u32> = und.edge_indices_from(ix.a).map(|eix| *und.edge(eix)).collect();
+    let from_a_vec: Vec<u32> = und
+        .edge_indices_from(ix.a)
+        .map(|eix| *und.edge(eix))
+        .collect();
     let mut from_a_sorted = from_a_vec.clone();
     from_a_sorted.sort();
     assert_eq!(
@@ -940,8 +984,7 @@ fn flat_adj_edge_vec_vecis_complex_directed_only() {
         let _e_ba = ctx.insert_edge(40u32, [b, a]).unwrap();
         let _e_ac = ctx.insert_edge(50u32, [a, c]).unwrap();
 
-        let from_a: BTreeSet<u32> =
-            ctx.edge_indices_from(a).map(|eix| *ctx.edge(eix)).collect();
+        let from_a: BTreeSet<u32> = ctx.edge_indices_from(a).map(|eix| *ctx.edge(eix)).collect();
         assert_eq!(from_a, BTreeSet::from([10, 20, 30, 50]));
         let to_a: BTreeSet<u32> = ctx.edge_indices_to(a).map(|eix| *ctx.edge(eix)).collect();
         assert_eq!(to_a, BTreeSet::from([10, 40]));
@@ -1144,7 +1187,10 @@ fn linked_adj_edge_swap_remove_drains_in_sequence() {
         });
         let (n, e) = g.scope(|ctx| (ctx.nodes().count(), ctx.edges().count()));
         assert_eq!(n, 3, "nodes preserved through edge removal");
-        assert_eq!(e, expected_remaining, "edge count decreases by one each pass");
+        assert_eq!(
+            e, expected_remaining,
+            "edge count decreases by one each pass"
+        );
     }
 }
 
@@ -1165,7 +1211,7 @@ fn linked_adj_edge_swap_remove_node_with_many_edges() {
         let _ = ctx.insert_edge(30u32, [d, b]).unwrap();
         let _ = ctx.insert_edge(40u32, [b, b]).unwrap(); // self-loop
         let _ = ctx.insert_edge(50u32, [a, c]).unwrap(); // not incident on b
-        // Verify the build looks right before we tear it down.
+                                                         // Verify the build looks right before we tear it down.
         assert_eq!(ctx.nodes().count(), 4);
         assert_eq!(ctx.edges().count(), 5);
         let b_incident: BTreeSet<u32> = ctx.edges_of(b).copied().collect();
@@ -1239,7 +1285,8 @@ where
         for _ in 0..n_edges {
             let t = rng.below(nixs.len());
             let h = rng.below(nixs.len());
-            ctx.insert_edge(next_edge_value, [nixs[t], nixs[h]]).unwrap();
+            ctx.insert_edge(next_edge_value, [nixs[t], nixs[h]])
+                .unwrap();
             model_edges.insert(next_edge_value, [values[t], values[h]]);
             next_edge_value += 1;
         }
@@ -1313,10 +1360,8 @@ where
                 })
                 .collect();
             got_edges.sort();
-            let mut want_edges: Vec<(u32, u32, u32)> = model_edges
-                .iter()
-                .map(|(&e, &[t, h])| (e, t, h))
-                .collect();
+            let mut want_edges: Vec<(u32, u32, u32)> =
+                model_edges.iter().map(|(&e, &[t, h])| (e, t, h)).collect();
             want_edges.sort();
             assert_eq!(got_edges, want_edges, "seed {seed} round {round}: edges");
 
@@ -1397,7 +1442,8 @@ where
                 for _ in 0..extra {
                     let t = rng.below(nixs.len());
                     let h = rng.below(nixs.len());
-                    ctx.insert_edge(next_edge_value, [nixs[t], nixs[h]]).unwrap();
+                    ctx.insert_edge(next_edge_value, [nixs[t], nixs[h]])
+                        .unwrap();
                     model_edges.insert(next_edge_value, [values[t], values[h]]);
                     next_edge_value += 1;
                 }
@@ -1429,10 +1475,8 @@ fn linked_adj_edge_hybrid_batch_removal_stress() {
         Vec<(u32, LinkedNodeRepr<Option<u32>>)>,
         BTreeMap<u32, EdgeRepr<u32, Option<u32>>>,
     >;
-    type BTreeNodesVecEdges = LinkedAdjEdgeGraph<
-        BTreeMap<u32, LinkedNodeRepr<u32>>,
-        Vec<(u32, EdgeRepr<u32, u32>)>,
-    >;
+    type BTreeNodesVecEdges =
+        LinkedAdjEdgeGraph<BTreeMap<u32, LinkedNodeRepr<u32>>, Vec<(u32, EdgeRepr<u32, u32>)>>;
     for seed in 201..=216u64 {
         run_batch_removal_stress::<VecNodesBTreeEdges>(seed);
         run_batch_removal_stress::<BTreeNodesVecEdges>(seed);

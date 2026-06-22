@@ -1,8 +1,8 @@
 extern crate proc_macro;
 
-use proc_macro_error::{abort_if_dirty, emit_error, proc_macro_error, set_dummy};
 use proc_macro::TokenStream;
 use proc_macro2::{Spacing, TokenStream as TokenStream2, TokenTree};
+use proc_macro_error::{abort_if_dirty, emit_error, proc_macro_error, set_dummy};
 use syn::parse::{Parse, ParseStream};
 use syn::{braced, Expr, Ident, Path, Token};
 use template_quote::{quote, ToTokens};
@@ -317,7 +317,10 @@ fn gen_node_insert(
             )
         }
         NodeSpec::Anon(expr) => {
-            let tmp = syn::Ident::new(&format!("__node_{}", counter), proc_macro2::Span::call_site());
+            let tmp = syn::Ident::new(
+                &format!("__node_{}", counter),
+                proc_macro2::Span::call_site(),
+            );
             *counter += 1;
             (
                 quote! {
@@ -422,7 +425,8 @@ pub fn graph(input: TokenStream) -> TokenStream {
                     }
                     ident.clone()
                 } else {
-                    let (stmt, _) = gen_node_insert(spec, crate_path, &graph_access, &mut node_counter);
+                    let (stmt, _) =
+                        gen_node_insert(spec, crate_path, &graph_access, &mut node_counter);
                     node_stmts.push(stmt);
                     named_node_defined.insert(key.clone(), sig);
                     named_node_span.insert(key, ident.span());
@@ -454,7 +458,8 @@ pub fn graph(input: TokenStream) -> TokenStream {
     let mut named_node_span: Option<proc_macro2::Span> = None;
     let mut named_edge_span: Option<proc_macro2::Span> = None;
     let mut edge_counter: usize = 0;
-    let mut named_edge_defined = std::collections::HashMap::<String, (String, proc_macro2::Span)>::new();
+    let mut named_edge_defined =
+        std::collections::HashMap::<String, (String, proc_macro2::Span)>::new();
 
     for (decl_ix, decl) in input.decls.iter().enumerate() {
         let (src_var, dst_var) = &decl_endpoint_vars[decl_ix];
@@ -481,12 +486,7 @@ pub fn graph(input: TokenStream) -> TokenStream {
                 if named_edge_span.is_none() {
                     named_edge_span = Some(ident.span());
                 }
-                let sig = format!(
-                    "{}|{}|{}",
-                    src_var,
-                    edge_payload_sig(&decl.edge),
-                    dst_var
-                );
+                let sig = format!("{}|{}|{}", src_var, edge_payload_sig(&decl.edge), dst_var);
                 let key = ident.to_string();
                 if let Some((prev_sig, first_span)) = named_edge_defined.get(&key) {
                     if prev_sig != &sig {
@@ -514,12 +514,7 @@ pub fn graph(input: TokenStream) -> TokenStream {
                 if named_edge_span.is_none() {
                     named_edge_span = Some(ident.span());
                 }
-                let sig = format!(
-                    "{}|{}|{}",
-                    src_var,
-                    edge_payload_sig(&decl.edge),
-                    dst_var
-                );
+                let sig = format!("{}|{}|{}", src_var, edge_payload_sig(&decl.edge), dst_var);
                 let key = ident.to_string();
                 if let Some((prev_sig, first_span)) = named_edge_defined.get(&key) {
                     if prev_sig != &sig {

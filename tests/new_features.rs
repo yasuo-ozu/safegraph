@@ -1,6 +1,6 @@
-use safegraph::BTreeGraph;
 use safegraph::graph::capability::{Bigraph, UniqueEdge, UniqueNode};
 use safegraph::graph::{prelude::*, GraphMap};
+use safegraph::BTreeGraph;
 use safegraph::HashGraph;
 use safegraph::VecGraph;
 

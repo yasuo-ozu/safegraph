@@ -192,7 +192,11 @@ where
         self.next = storage.next[IS_INCOMING as usize];
         #[cfg(debug_assertions)]
         debug_assert!(storage.node[IS_INCOMING as usize] == self.node_key);
-        Some(WalkItem::new(eix, edge, storage.node[(!IS_INCOMING) as usize]))
+        Some(WalkItem::new(
+            eix,
+            edge,
+            storage.node[(!IS_INCOMING) as usize],
+        ))
     }
 }
 
@@ -979,8 +983,9 @@ where
             for w in edges_with_slot.windows(2) {
                 debug_assert!(w[0].1 != w[1].1, "duplicate edge index in batch removal");
             }
-            let mut edges_out_buf: Vec<MaybeUninit<EC::Value>> =
-                (0..edge_result_len).map(|_| MaybeUninit::uninit()).collect();
+            let mut edges_out_buf: Vec<MaybeUninit<EC::Value>> = (0..edge_result_len)
+                .map(|_| MaybeUninit::uninit())
+                .collect();
             for (slot, eix) in edges_with_slot {
                 // SAFETY: descending order keeps every queued index valid; no
                 // duplicates (checked above), so each slot in
@@ -989,9 +994,8 @@ where
                 unsafe { edges_out_buf.get_unchecked_mut(slot).write(data) };
             }
             let mut edges_out = IE::default();
-            edges_out.extend(
-                IntoIterator::into_iter(edges_out_buf).map(|e| unsafe { e.assume_init() }),
-            );
+            edges_out
+                .extend(IntoIterator::into_iter(edges_out_buf).map(|e| unsafe { e.assume_init() }));
             return (IN::default(), edges_out);
         }
 
@@ -1023,8 +1027,9 @@ where
             for w in nodes_with_slot.windows(2) {
                 debug_assert!(w[0].1 != w[1].1, "duplicate node index in batch removal");
             }
-            let mut nodes_out_buf: Vec<MaybeUninit<NC::Value>> =
-                (0..node_result_len).map(|_| MaybeUninit::uninit()).collect();
+            let mut nodes_out_buf: Vec<MaybeUninit<NC::Value>> = (0..node_result_len)
+                .map(|_| MaybeUninit::uninit())
+                .collect();
             for (slot, nix) in nodes_with_slot {
                 // SAFETY: descending order keeps every queued index valid; no
                 // duplicates (checked above), so each slot in
@@ -1033,9 +1038,8 @@ where
                 unsafe { nodes_out_buf.get_unchecked_mut(slot).write(data) };
             }
             let mut nodes_out = IN::default();
-            nodes_out.extend(
-                IntoIterator::into_iter(nodes_out_buf).map(|n| unsafe { n.assume_init() }),
-            );
+            nodes_out
+                .extend(IntoIterator::into_iter(nodes_out_buf).map(|n| unsafe { n.assume_init() }));
             return (nodes_out, IE::default());
         }
 

@@ -91,7 +91,11 @@ where
     // the flow value `W` escapes (no index), so the assertion is sound for the
     // duration of the call.
     edmonds_karp_with_flows(
-        unsafe { graph.unsafe_assert_stable_edge().unsafe_assert_stable_node() },
+        unsafe {
+            graph
+                .unsafe_assert_stable_edge()
+                .unsafe_assert_stable_node()
+        },
         source,
         sink,
         capacity,
@@ -265,7 +269,11 @@ where
                         AugmentStep::Reverse(from, to) => {
                             let rev = self.reverse_flow.get_mut(&(*from, *to)).unwrap();
                             *rev = *rev - bottleneck;
-                            for eix in unsafe { <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, *to) } {
+                            for eix in unsafe {
+                                <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
+                                    self.graph, *to,
+                                )
+                            } {
                                 let head = unsafe { self.graph.edge_head_index_unchecked(eix) };
                                 if head == *from {
                                     *self.residual.get_mut(&eix).unwrap() =
@@ -323,7 +331,8 @@ where
         }
 
         // Forward edges: node -> neighbor with residual > 0
-        for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, node) {
+        for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, node)
+        {
             let head = graph.edge_head_index_unchecked(eix);
             if !source_visited.contains_key(&head) && residual[&eix] > W::default() {
                 source_visited.insert(head, true);

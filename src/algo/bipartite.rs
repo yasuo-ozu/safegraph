@@ -125,9 +125,13 @@ where
             // Check all undirected neighbors (use edges_of for both directions)
             // SAFETY: edge indices are not exposed to the caller and `graph` is
             // borrowed immutably for the whole call (raw bound-free primitive).
-            for eix in unsafe { <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, node) } {
+            for eix in unsafe {
+                <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, node)
+            } {
                 let mut found_other = false;
-                for endpoint in unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix) } {
+                for endpoint in unsafe {
+                    <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix)
+                } {
                     if endpoint == node {
                         continue;
                     }

@@ -68,7 +68,8 @@ pub fn page_rank<'r, G>(
 where
     G: Graph + Directed<'r> + StableNode + ?Sized,
 {
-    let nodes: Vec<G::NodeIx> = <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
+    let nodes: Vec<G::NodeIx> =
+        <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
     let n = nodes.len();
 
     if n == 0 {

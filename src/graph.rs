@@ -8,9 +8,9 @@ pub mod context;
 pub mod edge;
 pub mod operation;
 pub mod prelude;
-pub mod walk_item;
 pub mod stabilized;
 pub mod undirected;
+pub mod walk_item;
 
 use assert_stable::{AssertStable, TEdge, TNode};
 use capability::*;

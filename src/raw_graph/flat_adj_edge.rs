@@ -123,8 +123,7 @@ where
 
 impl<NC, EC, V, E, VIx, EIx, IS> IncomingOps<EC, IS, VIx, EIx> for NC
 where
-    NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>>
-        + UpdatableRandomAccess,
+    NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>> + UpdatableRandomAccess,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx>,
     IS: IncidenceSet<EdgeIx<VIx, EIx>> + for<'a> IncidenceSetRef<'a, EdgeIx<VIx, EIx>>,
     VIx: Copy + Eq + 'static,
@@ -458,10 +457,7 @@ where
     }
 
     type EdgeIndicesOf = std::vec::IntoIter<EdgeIx<VIx, EIx>>;
-    unsafe fn edge_indices_of_unchecked(
-        &'r self,
-        node_ix: Self::NodeIx,
-    ) -> Self::EdgeIndicesOf {
+    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesOf {
         let mut out = Vec::new();
         let inner = &unsafe { self.nodes.get_storage_unchecked(&node_ix) }.outgoing;
         for eix in inner.indices() {
@@ -569,10 +565,7 @@ where
     E: 'r,
 {
     type EdgeIndicesTo = std::vec::IntoIter<EdgeIx<VIx, EIx>>;
-    unsafe fn edge_indices_to_unchecked(
-        &'r self,
-        node_ix: Self::NodeIx,
-    ) -> Self::EdgeIndicesTo {
+    unsafe fn edge_indices_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesTo {
         unsafe { IncomingOps::collect_incoming(&self.nodes, node_ix) }.into_iter()
     }
 
@@ -656,8 +649,7 @@ where
 
 impl<'r, NC, EC, V, E, VIx, EIx, IS> UpdateNode<'r> for FlatAdjEdgeGraph<NC>
 where
-    NC: UpdatableRandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>>
-        + 'r,
+    NC: UpdatableRandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>> + 'r,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx> + 'r,
     VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
     EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
@@ -669,18 +661,12 @@ where
     }
 
     type WalksFromMut = std::iter::Empty<WalkItemMut<'r, EdgeIx<VIx, EIx>, E, VIx>>;
-    unsafe fn walks_from_unchecked_mut(
-        &'r mut self,
-        _node_ix: Self::NodeIx,
-    ) -> Self::WalksFromMut {
+    unsafe fn walks_from_unchecked_mut(&'r mut self, _node_ix: Self::NodeIx) -> Self::WalksFromMut {
         std::iter::empty()
     }
 
     type WalksOfMut = std::iter::Empty<WalkItemMut<'r, EdgeIx<VIx, EIx>, E, VIx>>;
-    unsafe fn walks_of_unchecked_mut(
-        &'r mut self,
-        _node_ix: Self::NodeIx,
-    ) -> Self::WalksOfMut {
+    unsafe fn walks_of_unchecked_mut(&'r mut self, _node_ix: Self::NodeIx) -> Self::WalksOfMut {
         std::iter::empty()
     }
 }
@@ -727,9 +713,8 @@ where
                     .outgoing
                     .get_storage_unchecked(&edge_ix.1)
             };
-            if unsafe {
-                IncomingOps::record_contains(&self.nodes, relocated_target, &old_edge_ix)
-            } {
+            if unsafe { IncomingOps::record_contains(&self.nodes, relocated_target, &old_edge_ix) }
+            {
                 unsafe {
                     IncomingOps::record_remove(&mut self.nodes, relocated_target, &old_edge_ix)
                 };
@@ -802,9 +787,7 @@ where
                         unsafe { IncomingOps::collect_incoming(&self.nodes, head) };
                     for entry in &entries {
                         if entry.0 == old_last {
-                            unsafe {
-                                IncomingOps::record_remove(&mut self.nodes, head, entry)
-                            };
+                            unsafe { IncomingOps::record_remove(&mut self.nodes, head, entry) };
                         }
                     }
                     for entry in entries {
@@ -863,8 +846,7 @@ where
 
 unsafe impl<NC, EC, V, E, VIx, EIx, IS> StableNode for FlatAdjEdgeGraph<NC>
 where
-    NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>>
-        + StableCollection,
+    NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>> + StableCollection,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx>,
     VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
     EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
@@ -873,8 +855,7 @@ where
 
 unsafe impl<NC, EC, V, E, VIx, EIx, IS> StableEdge for FlatAdjEdgeGraph<NC>
 where
-    NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>>
-        + StableCollection,
+    NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>> + StableCollection,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx> + StableCollection,
     VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
     EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
@@ -935,4 +916,3 @@ impl<'r, N, E, NewN, NewE, IS> GraphMap<'r, NewN, NewE>
         FlatAdjEdgeGraph { nodes }
     }
 }
-

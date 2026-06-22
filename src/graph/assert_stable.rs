@@ -120,15 +120,13 @@ where
         self.inner.edge_indices_of_unchecked(node_ix)
     }
 
-    type WalksFrom
-        = <G as GraphOperation<'r>>::WalksFrom;
+    type WalksFrom = <G as GraphOperation<'r>>::WalksFrom;
     #[inline]
     unsafe fn walks_from_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksFrom {
         self.inner.walks_from_unchecked(node_ix)
     }
 
-    type WalksOf
-        = <G as GraphOperation<'r>>::WalksOf;
+    type WalksOf = <G as GraphOperation<'r>>::WalksOf;
     #[inline]
     unsafe fn walks_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksOf {
         self.inner.walks_of_unchecked(node_ix)
@@ -160,8 +158,7 @@ where
     type EdgeIndicesTo = <G as Directed<'r>>::EdgeIndicesTo;
     type EdgeTailIndices = <G as Directed<'r>>::EdgeTailIndices;
     type EdgeHeadIndices = <G as Directed<'r>>::EdgeHeadIndices;
-    type WalksTo
-        = <G as Directed<'r>>::WalksTo;
+    type WalksTo = <G as Directed<'r>>::WalksTo;
 
     #[inline]
     unsafe fn walks_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksTo {

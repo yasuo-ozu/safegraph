@@ -30,8 +30,8 @@ use crate::collection::{
     StableCollection, UpdatableRandomAccess,
 };
 use crate::graph::capability::{
-    InsertEdge, InsertNode, RemoveEdge, RemoveNode, StableEdge, StableNode, UniqueEdge,
-    UniqueNode, UpdateEdge, UpdateNode,
+    InsertEdge, InsertNode, RemoveEdge, RemoveNode, StableEdge, StableNode, UniqueEdge, UniqueNode,
+    UpdateEdge, UpdateNode,
 };
 use crate::graph::edge::Endpoints;
 use crate::graph::operation::GraphOperation;
@@ -185,8 +185,7 @@ pub type StableHyperGraph<N, E> = HyperGraph<
 
 /// `HashMap`-backed hypergraph (Key=Value pattern). Same stability as
 /// [`StableHyperGraph`], hash-based iteration order.
-pub type HashHyperGraph<N, E> =
-    HyperGraph<HashMap<N, HashSet<E>>, HashMap<E, HashSet<N>>>;
+pub type HashHyperGraph<N, E> = HyperGraph<HashMap<N, HashSet<E>>, HashMap<E, HashSet<N>>>;
 
 impl<NC, EC, V, E, VIx, EIx, IS, ES> GraphProperty for HyperGraph<NC, EC>
 where
@@ -242,8 +241,7 @@ where
     _marker: PhantomData<&'r NC>,
 }
 
-impl<'r, NC, EC, V, E, VIx, EIx, IS, ES> Iterator
-    for Walks<'r, NC, EC, VIx, EIx, IS, ES>
+impl<'r, NC, EC, V, E, VIx, EIx, IS, ES> Iterator for Walks<'r, NC, EC, VIx, EIx, IS, ES>
 where
     NC: RandomAccess<Index = VIx, Value = V, Storage = IS>,
     EC: RandomAccess<Index = EIx, Value = E, Storage = ES>,
@@ -271,8 +269,7 @@ where
                 self.cur_edge = None;
             }
             let eix = self.incidence_iter.next()?;
-            let endpoints =
-                unsafe { self.edges.get_storage_unchecked(&eix) }.clone();
+            let endpoints = unsafe { self.edges.get_storage_unchecked(&eix) }.clone();
             self.cur_edge = Some((eix, endpoints.into_iter()));
         }
     }
@@ -341,10 +338,7 @@ where
     }
 
     type EdgeIndicesOf = EdgeIndicesFromIter<<IS as IncidenceSetRef<'r, EIx>>::Iter>;
-    unsafe fn edge_indices_of_unchecked(
-        &'r self,
-        node_ix: Self::NodeIx,
-    ) -> Self::EdgeIndicesOf {
+    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesOf {
         // Undirected: same as edge_indices_from.
         unsafe { self.edge_indices_from_unchecked(node_ix) }
     }
@@ -440,18 +434,12 @@ where
     }
 
     type WalksFromMut = std::iter::Empty<WalkItemMut<'r, EIx, E, VIx>>;
-    unsafe fn walks_from_unchecked_mut(
-        &'r mut self,
-        _node_ix: Self::NodeIx,
-    ) -> Self::WalksFromMut {
+    unsafe fn walks_from_unchecked_mut(&'r mut self, _node_ix: Self::NodeIx) -> Self::WalksFromMut {
         std::iter::empty()
     }
 
     type WalksOfMut = std::iter::Empty<WalkItemMut<'r, EIx, E, VIx>>;
-    unsafe fn walks_of_unchecked_mut(
-        &'r mut self,
-        _node_ix: Self::NodeIx,
-    ) -> Self::WalksOfMut {
+    unsafe fn walks_of_unchecked_mut(&'r mut self, _node_ix: Self::NodeIx) -> Self::WalksOfMut {
         std::iter::empty()
     }
 }
@@ -491,8 +479,7 @@ where
             // The relocated edge now sits at `edge_ix`. Its endpoints'
             // incidence sets currently hold `old_last`; they need to point
             // at `edge_ix`.
-            let relocated_endpoints =
-                unsafe { self.edges.get_storage_unchecked(&edge_ix) }.clone();
+            let relocated_endpoints = unsafe { self.edges.get_storage_unchecked(&edge_ix) }.clone();
             for vix in relocated_endpoints.into_iter() {
                 let storage = unsafe { self.nodes.get_storage_unchecked_mut(&vix) };
                 storage.remove(&old_last);
@@ -542,8 +529,7 @@ where
         if let Some(old_last) = swapped {
             let all_eixs: Vec<EIx> = self.edges.indices().collect();
             for eix in all_eixs {
-                let endpoints_clone =
-                    unsafe { self.edges.get_storage_unchecked(&eix) }.clone();
+                let endpoints_clone = unsafe { self.edges.get_storage_unchecked(&eix) }.clone();
                 let mut needs_rewrite = false;
                 for vix in endpoints_clone.iter() {
                     if vix == old_last {
@@ -656,4 +642,3 @@ where
         unsafe { self.edges.value_to_key_unchecked(edge.borrow()) }.copied()
     }
 }
-

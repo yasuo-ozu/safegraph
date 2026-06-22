@@ -131,8 +131,12 @@ where
         // passed has_node_index, or a neighbor yielded by the graph).
         // The caller guarantees the graph is not modified (via StableNode or
         // the unsafe contract of new_unchecked).
-        for eix in unsafe { <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, node) } {
-            for endpoint in unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix) } {
+        for eix in unsafe {
+            <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, node)
+        } {
+            for endpoint in unsafe {
+                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix)
+            } {
                 if endpoint != node && self.visited.insert(endpoint) {
                     self.queue.push_back(endpoint);
                 }

@@ -303,6 +303,5 @@ fn take_nodes_edges_swap_no_patch() {
     g.push_edge(103, [n0, n2]).unwrap();
 
     // Safe call — hangs due to cyclic linked list in the bulk removal path.
-    let (_nodes, _edges): (Vec<u32>, Vec<u32>) =
-        g.take_nodes_edges([n0], std::iter::empty());
+    let (_nodes, _edges): (Vec<u32>, Vec<u32>) = g.take_nodes_edges([n0], std::iter::empty());
 }

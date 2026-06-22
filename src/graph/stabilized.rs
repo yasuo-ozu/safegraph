@@ -556,7 +556,10 @@ where
         });
         <[G::NodeIx; 2] as Map<NodeIx<G::NodeIx>>>::map_forward(
             <G as Bigraph>::endpoints_as_array(raw),
-            |inner| NodeIx { version: versions[&inner], inner },
+            |inner| NodeIx {
+                version: versions[&inner],
+                inner,
+            },
         )
     }
 
@@ -568,7 +571,10 @@ where
         });
         <G::Endpoints as Map<NodeIx<G::NodeIx>>>::map_forward(
             <G as Bigraph>::endpoints_from_array(raw),
-            |inner| NodeIx { version: versions[&inner], inner },
+            |inner| NodeIx {
+                version: versions[&inner],
+                inner,
+            },
         )
     }
 }
