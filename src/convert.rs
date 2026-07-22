@@ -5,6 +5,11 @@ use std::fmt::Display;
 use crate::graph::capability::Bigraph;
 use crate::graph::Graph;
 
+mod aa;
+pub use aa::{
+    to_aa, to_aa_with, to_ascii, to_ascii_art, to_ascii_art_with, to_ascii_with, AaLabel, AnsiColor,
+};
+
 /// Convert a graph into Mermaid `flowchart LR` source.
 ///
 /// Handles both directed and undirected graphs from one entrypoint: the link
@@ -70,9 +75,210 @@ fn escape_label(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_label, to_mermaid};
+    use super::{escape_label, to_aa, to_aa_with, to_mermaid, AnsiColor};
     use crate::graph::Graph;
     use crate::BTreeGraph;
+
+    #[test]
+    fn aa_directed_and_isolated_nodes() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        g.insert_node("A").unwrap();
+        g.insert_node("B").unwrap();
+        g.insert_node("C").unwrap();
+        g.insert_edge("road", ["A", "B"]).unwrap();
+
+        let aa = to_aa(&g, 80);
+        assert_eq!(aa.matches("| A |").count(), 1, "{aa}");
+        assert_eq!(aa.matches("| B |").count(), 1, "{aa}");
+        assert_eq!(aa.matches("| C |").count(), 1, "{aa}");
+        assert!(aa.contains("road"), "{aa}");
+        assert!(
+            aa.chars().any(|ch| matches!(ch, '>' | '<' | '^' | 'v')),
+            "{aa}"
+        );
+        assert!(
+            !aa.contains("+v"),
+            "arrowhead must have a straight lead-in:\n{aa}"
+        );
+    }
+
+    #[test]
+    fn aa_undirected_has_no_arrowhead() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        g.insert_node("A").unwrap();
+        g.insert_node("B").unwrap();
+        g.insert_edge("road", ["A", "B"]).unwrap();
+
+        let aa = to_aa(&g.undirected(), 80);
+        assert_eq!(aa.matches("| A |").count(), 1, "{aa}");
+        assert_eq!(aa.matches("| B |").count(), 1, "{aa}");
+        assert!(aa.contains("road"), "{aa}");
+        assert!(
+            !aa.chars().any(|ch| matches!(ch, '>' | '<' | '^' | 'v')),
+            "{aa}"
+        );
+    }
+
+    #[test]
+    fn aa_custom_labels_colors_and_width() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        g.insert_node("alpha").unwrap();
+        g.insert_node("beta").unwrap();
+        g.insert_edge("long edge", ["alpha", "beta"]).unwrap();
+
+        let aa = to_aa_with(
+            &g,
+            17,
+            |node| (node.to_uppercase(), AnsiColor::Green),
+            |edge| ((*edge).to_owned(), AnsiColor::Blue),
+        );
+        let uncolored = aa
+            .replace("\x1b[32m", "")
+            .replace("\x1b[34m", "")
+            .replace("\x1b[0m", "");
+        assert_eq!(uncolored.matches("ALPHA").count(), 1, "{uncolored}");
+        assert_eq!(uncolored.matches("BETA").count(), 1, "{uncolored}");
+        assert!(uncolored.contains("long edge"), "{uncolored}");
+        assert!(uncolored
+            .lines()
+            .all(|line| unicode_width::UnicodeWidthStr::width(line) <= 17));
+        assert!(aa.contains("\x1b[32m"));
+        assert!(aa.contains("\x1b[34m"));
+    }
+
+    #[test]
+    fn aa_tiny_and_zero_widths_are_honored() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        g.insert_node("日本語").unwrap();
+
+        assert_eq!(to_aa(&g, 0), "");
+        for width in 1..7 {
+            let aa = to_aa(&g, width);
+            assert!(aa
+                .lines()
+                .all(|line| unicode_width::UnicodeWidthStr::width(line) <= width));
+        }
+    }
+
+    #[test]
+    fn aa_draws_loops_and_parallel_edges_without_repeating_nodes() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        g.insert_node("A").unwrap();
+        g.insert_node("B").unwrap();
+        g.insert_edge("first", ["A", "B"]).unwrap();
+        g.insert_edge("loop", ["A", "A"]).unwrap();
+        g.insert_edge("second", ["A", "B"]).unwrap();
+
+        let aa = to_aa(&g, 50);
+        assert_eq!(aa.matches("| A |").count(), 1, "{aa}");
+        assert_eq!(aa.matches("| B |").count(), 1, "{aa}");
+        assert!(aa.contains("first"), "{aa}");
+        assert!(aa.contains("loop"), "{aa}");
+        assert!(aa.contains("second"), "{aa}");
+    }
+
+    #[test]
+    fn aa_directed_dag_uses_top_to_bottom_layers() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        for node in ["A", "B", "C", "D"] {
+            g.insert_node(node).unwrap();
+        }
+        g.insert_edge("ab", ["A", "B"]).unwrap();
+        g.insert_edge("ac", ["A", "C"]).unwrap();
+        g.insert_edge("bd", ["B", "D"]).unwrap();
+        g.insert_edge("cd", ["C", "D"]).unwrap();
+
+        let aa = to_aa(&g, 60);
+        let row = |label: &str| {
+            aa.lines()
+                .position(|line| line.contains(&format!("| {} |", label)))
+                .unwrap()
+        };
+        assert!(row("A") < row("B"), "{aa}");
+        assert_eq!(row("B"), row("C"), "{aa}");
+        assert!(row("C") < row("D"), "{aa}");
+    }
+
+    #[test]
+    fn aa_keeps_strongly_connected_nodes_together() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        for node in ["A", "B", "C"] {
+            g.insert_node(node).unwrap();
+        }
+        g.insert_edge("ab", ["A", "B"]).unwrap();
+        g.insert_edge("ba", ["B", "A"]).unwrap();
+        g.insert_edge("bc", ["B", "C"]).unwrap();
+
+        let aa = to_aa(&g, 50);
+        let row = |label: &str| {
+            aa.lines()
+                .position(|line| line.contains(&format!("| {} |", label)))
+                .unwrap()
+        };
+        assert_eq!(row("A"), row("B"), "{aa}");
+        assert!(row("B") < row("C"), "{aa}");
+    }
+
+    #[test]
+    fn aa_dense_graph_uses_edge_label_legend_without_endpoints() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        g.insert_node("A").unwrap();
+        g.insert_node("B").unwrap();
+        for edge in ["e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8"] {
+            g.insert_edge(edge, ["A", "B"]).unwrap();
+        }
+
+        let aa = to_aa(&g, 50);
+        assert!(aa.contains("edge labels (x = crossing):"), "{aa}");
+        for number in 1..=8 {
+            let mapping = format!("#{} e{}", number, number);
+            assert!(
+                aa.contains(&mapping),
+                "missing edge mapping {mapping}:\n{aa}"
+            );
+        }
+        assert!(!aa.contains("A -> B"), "legend repeated endpoints:\n{aa}");
+        assert!(aa
+            .lines()
+            .all(|line| unicode_width::UnicodeWidthStr::width(line) <= 50));
+    }
+
+    #[test]
+    fn aa_expands_high_degree_nodes_for_separated_ports() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        for node in ["A", "B", "C", "D", "E", "F", "DB"] {
+            g.insert_node(node).unwrap();
+        }
+        for (edge, source) in [
+            ("a", "A"),
+            ("b", "B"),
+            ("c", "C"),
+            ("d", "D"),
+            ("e", "E"),
+            ("f", "F"),
+        ] {
+            g.insert_edge(edge, [source, "DB"]).unwrap();
+        }
+
+        let aa = to_aa(&g, 80);
+        assert!(
+            aa.contains("| DB        |"),
+            "high-degree node was not widened:\n{aa}"
+        );
+    }
+
+    #[test]
+    fn aa_self_loop_has_compact_route_and_destination() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        g.insert_node("A").unwrap();
+        g.insert_edge("loop", ["A", "A"]).unwrap();
+
+        let aa = to_aa(&g, 40);
+        assert_eq!(aa.matches("| A |").count(), 1, "{aa}");
+        assert!(aa.contains("| A |-"), "{aa}");
+        assert!(aa.contains("loop"), "{aa}");
+        assert!(aa.contains('^'), "{aa}");
+    }
 
     #[test]
     fn mermaid_empty_graph() {

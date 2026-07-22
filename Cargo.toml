@@ -31,6 +31,7 @@ matrix = ["sprs"]
 safegraph-macros = { path = "macro", version = "0.1.0" }
 rustversion = "1"
 num-traits = "0.2"
+unicode-width = "0.1.14"
 sprs = { version = "0.11", default-features = false, optional = true }
 
 [dev-dependencies]
