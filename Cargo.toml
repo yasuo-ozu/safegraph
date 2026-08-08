@@ -8,7 +8,7 @@ resolver = "2"
 
 [package]
 name = "safegraph"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 # Core MSRV over `--no-default-features`
 rust-version = "1.56"
@@ -27,7 +27,7 @@ default = ["matrix"]
 matrix = ["sprs"]
 
 [dependencies]
-safegraph-macros = { path = "macro", version = "0.1.0" }
+safegraph-macros = { path = "macro", version = "0.2.0" }
 num-traits = "0.2"
 unicode-width = "0.1"
 sprs = { version = "0.11", default-features = false, optional = true }
