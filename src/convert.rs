@@ -77,7 +77,7 @@ fn escape_label(s: &str) -> String {
 mod tests {
     use super::{escape_label, to_aa, to_aa_with, to_mermaid, AnsiColor};
     use crate::graph::Graph;
-    use crate::BTreeGraph;
+    use crate::{BTreeGraph, VecGraph};
 
     #[test]
     fn aa_directed_and_isolated_nodes() {
@@ -178,6 +178,97 @@ mod tests {
     }
 
     #[test]
+    fn aa_unifies_equally_labeled_reciprocal_edges() {
+        let mut g = VecGraph::<&str, &str>::default();
+        g.push("A").unwrap();
+        g.push("B").unwrap();
+        g.push_edge("same", [0, 1]).unwrap();
+        g.push_edge("same", [1, 0]).unwrap();
+
+        let aa = to_aa(&g, 50);
+        assert_eq!(aa.matches("same").count(), 1, "{aa}");
+        assert_eq!(
+            aa.chars()
+                .filter(|character| matches!(character, '<' | '>' | '^' | 'v'))
+                .count(),
+            2,
+            "{aa}"
+        );
+    }
+
+    #[test]
+    fn aa_keeps_differently_labeled_reciprocal_edges_separate() {
+        let mut g = VecGraph::<&str, &str>::default();
+        g.push("A").unwrap();
+        g.push("B").unwrap();
+        g.push_edge("forward", [0, 1]).unwrap();
+        g.push_edge("backward", [1, 0]).unwrap();
+
+        let aa = to_aa(&g, 50);
+        assert!(aa.contains("forward"), "{aa}");
+        assert!(aa.contains("backward"), "{aa}");
+    }
+
+    #[test]
+    fn aa_routes_reciprocal_edge_before_neighboring_self_loops() {
+        let mut g = VecGraph::<&str, &str>::default();
+        g.push("A").unwrap();
+        g.push("B").unwrap();
+        g.push_edge("same", [0, 0]).unwrap();
+        g.push_edge("same", [0, 1]).unwrap();
+        g.push_edge("same", [1, 0]).unwrap();
+        g.push_edge("same", [1, 1]).unwrap();
+
+        let aa = to_aa(&g, 60);
+        assert!(
+            aa.lines()
+                .any(|line| line.contains("| A |<") && line.contains(">| B |")),
+            "reciprocal edge lost its direct lane:\n{aa}"
+        );
+    }
+
+    #[test]
+    fn aa_edge_order_is_independent_of_insertion_order() {
+        fn graph(reverse: bool) -> VecGraph<&'static str, &'static str> {
+            let mut g = VecGraph::default();
+            for node in ["A", "B", "C"] {
+                g.push(node).unwrap();
+            }
+            let edges = [("ab", [0, 1]), ("ac", [0, 2]), ("bc", [1, 2])];
+            if reverse {
+                for &(label, endpoints) in edges.iter().rev() {
+                    g.push_edge(label, endpoints).unwrap();
+                }
+            } else {
+                for &(label, endpoints) in &edges {
+                    g.push_edge(label, endpoints).unwrap();
+                }
+            }
+            g
+        }
+
+        assert_eq!(to_aa(&graph(false), 70), to_aa(&graph(true), 70));
+    }
+
+    #[test]
+    fn aa_compacts_a_uniform_dense_edge_legend() {
+        let mut g = VecGraph::<usize, &str>::default();
+        for node in 0..3 {
+            g.push(node).unwrap();
+        }
+        for from in 0..3 {
+            for to in 0..3 {
+                g.push_edge("same", [from, to]).unwrap();
+            }
+        }
+
+        let aa = to_aa(&g, 100);
+        assert!(aa.contains("dense adjacency matrix"), "{aa}");
+        assert_eq!(aa.matches("all edge labels: same").count(), 1, "{aa}");
+        assert!(!aa.contains("#1 same"), "{aa}");
+    }
+
+    #[test]
     fn aa_directed_dag_uses_top_to_bottom_layers() {
         let mut g = BTreeGraph::<&str, &str>::default();
         for node in ["A", "B", "C", "D"] {
@@ -268,6 +359,81 @@ mod tests {
     }
 
     #[test]
+    fn aa_expands_node_margins_to_use_available_width() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        for node in ["A", "B", "C"] {
+            g.insert_node(node).unwrap();
+        }
+        g.insert_edge("ac", ["A", "C"]).unwrap();
+        g.insert_edge("bc", ["B", "C"]).unwrap();
+
+        let aa = to_aa(&g, 60);
+        let row = aa
+            .lines()
+            .find(|line| line.contains("| A |") && line.contains("| B |"))
+            .unwrap();
+        let a = row.find("| A |").unwrap();
+        let b = row.find("| B |").unwrap();
+        assert!(
+            b - (a + 5) > 4,
+            "unused width was not added to margins:\n{aa}"
+        );
+    }
+
+    #[test]
+    fn aa_crops_unused_left_canvas_space() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        g.insert_node("Centered").unwrap();
+
+        let aa = to_aa(&g, 240);
+        assert!(
+            aa.starts_with("+----------+"),
+            "drawing was not cropped:\n{aa}"
+        );
+    }
+
+    #[test]
+    fn aa_isolates_weak_components() {
+        let mut g = BTreeGraph::<&str, &str>::default();
+        for node in ["A", "B", "C", "D"] {
+            g.insert_node(node).unwrap();
+        }
+        g.insert_edge("ab", ["A", "B"]).unwrap();
+        g.insert_edge("cd", ["C", "D"]).unwrap();
+
+        let aa = to_aa(&g, 80);
+        let parts: Vec<_> = aa.split("\n\n").collect();
+        assert_eq!(parts.len(), 2, "components were not isolated:\n{aa}");
+        assert!(parts[0].contains("| A |") && parts[0].contains("| B |"));
+        assert!(!parts[0].contains("| C |") && !parts[0].contains("| D |"));
+        assert!(parts[1].contains("| C |") && parts[1].contains("| D |"));
+    }
+
+    #[test]
+    fn aa_uses_matrix_for_dense_strongly_connected_components() {
+        let mut g = BTreeGraph::<usize, usize>::default();
+        for node in 0..4 {
+            g.insert_node(node).unwrap();
+        }
+        let mut edge = 0;
+        for from in 0..4 {
+            for to in 0..4 {
+                g.insert_edge(edge, [from, to]).unwrap();
+                edge += 1;
+            }
+        }
+
+        let aa = to_aa(&g, 100);
+        assert!(
+            aa.contains("dense adjacency matrix (row source -> column target):"),
+            "{aa}"
+        );
+        assert!(aa.contains("1:0"), "{aa}");
+        assert!(aa.contains("#16"), "{aa}");
+        assert!(!aa.contains("x = crossing"), "{aa}");
+    }
+
+    #[test]
     fn aa_self_loop_has_compact_route_and_destination() {
         let mut g = BTreeGraph::<&str, &str>::default();
         g.insert_node("A").unwrap();
@@ -342,8 +508,6 @@ mod tests {
     // label, and breaking characters are escaped.
     #[test]
     fn mermaid_shows_escaped_data() {
-        use crate::VecGraph;
-
         // VecGraph indices are positional (0, 1); the data is separate.
         // Built with the safe `push` / `push_edge` (no `unsafe`).
         let mut g = VecGraph::<&str, &str>::default();

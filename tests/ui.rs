@@ -4,11 +4,11 @@ use ui_test::{dependencies::DependencyBuilder, run_tests, Config};
 
 fn main() -> ui_test::color_eyre::Result<()> {
     // These snapshots capture rustc's diagnostic output, which is NOT stable
-    // across compiler versions (note indentation, blank lines, and the long-type
-    // note all drift between releases). The target is therefore `test = false`
-    // (see Cargo.toml): it is excluded from the default `cargo test` set — which
-    // runs on floating `stable` — and run explicitly via `cargo test --test ui`
-    // by the dedicated, version-pinned `ui` CI job. Refresh with
+    // across compiler versions (note indentation, blank lines, extra `help:`
+    // suggestions, and the long-type note all drift between releases). This
+    // target runs as part of the default `cargo test` set, which is why the
+    // `test` CI job pins its toolchain rather than tracking `stable` — expect
+    // failures here on any other rustc. Refresh with
     // `BLESS=1 cargo test --test ui` on that same pinned toolchain.
     let mut config = Config {
         output_conflict_handling: if std::env::var_os("BLESS").is_some() {

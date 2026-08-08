@@ -12,9 +12,18 @@ env:
 jobs:
   # Verify the core crate still builds on the declared MSRV (rust-version in
   # Cargo.toml). The default `matrix` backend (sprs/ndarray) and the dev-deps
-  # require a newer rustc, so the MSRV covers `--no-default-features`: drop the
-  # dev-deps and let a recent cargo pick MSRV-compatible dependency versions for
-  # the old toolchain to build with `--locked`.
+  # require a newer rustc, so the MSRV covers `--no-default-features`.
+  #
+  # The division of labour below is deliberate: modern cargo does ALL network and
+  # resolution work, and 1.56 only compiles. Two reasons —
+  #  * dev-deps must be dropped before 1.56 sees the manifest. They stay in the
+  #    resolve graph even though `check` never builds them, and cargo 1.56 cannot
+  #    parse modern manifests (e.g. `bstr` uses `dep:` namespaced features, which
+  #    need cargo 1.60), so it fails before compiling anything.
+  #  * 1.56 predates sparse-registry support (added 1.68, default 1.70), so left
+  #    to itself it clones the ~2GB legacy *git* crates.io index — measured at
+  #    6m44s of a 6m46s step, against 0.6s for the same resolve on stable.
+  #    Vendoring with stable and running 1.56 `--offline` skips that entirely.
   msrv:
     name: MSRV check
     runs-on: ubuntu-latest
@@ -26,31 +35,33 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Check core crate on MSRV (1.56)
         run: |
+          rustc +1.56.0 --version   # make the toolchain under test visible in the log
           sed -i '/^\[dev-dependencies\]/,$d' Cargo.toml
           cargo +stable generate-lockfile
-          cargo +1.56.0 check --no-default-features --locked
+          # `fallback` above only honours a *declared* `rust-version`, and
+          # `unicode-width` declares none anywhere in its 0.1 line — yet 0.1.13
+          # derives `Default` on an enum (1.62) and 0.1.14 calls
+          # `usize::wrapping_add_signed` (1.66). 0.1.12 is the newest 1.56-clean
+          # release and exposes the same `width()` API, so pin it here.
+          cargo +stable update -p unicode-width --precise 0.1.12
+          # Vendor with stable, then compile offline on 1.56 (see job comment).
+          mkdir -p .cargo
+          cargo +stable vendor --versioned-dirs vendor > .cargo/config.toml
+          cargo +1.56.0 check --release --no-default-features --locked --offline
 
+  # PINNED, not floating `stable`. `tests/ui.rs` is part of the default `cargo
+  # test` set, and its `.stderr` snapshots compare rustc's diagnostic output
+  # verbatim — output that drifts between compiler releases (wording, extra
+  # `help:` suggestions), so a floating toolchain would fail on changes that say
+  # nothing about this crate. To bump: install the new toolchain, re-bless with
+  # `BLESS=1 cargo +<ver> test --test ui`, and update the version here.
   test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test
-
-  # UI/`.stderr` snapshot tests compare rustc's diagnostic output verbatim, and
-  # that output is not stable across compiler versions — so they run on a PINNED
-  # toolchain, separate from the floating-`stable` `test` job above (where they
-  # are excluded via `test = false`). They are run and enforced here, not
-  # skipped. To bump the pin: install the new toolchain locally, re-bless with
-  # `BLESS=1 cargo +<ver> test --test ui`, and update the version in both places.
-  ui:
-    name: UI tests (pinned rustc)
+    name: Test (pinned rustc)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.96.0
-      - run: cargo test --test ui
+      - run: cargo test
 
   fmt:
     name: Rustfmt
@@ -62,12 +73,15 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all --check
 
+  # PINNED for the same reason as `test`: `-D warnings` turns every lint added in
+  # a new clippy release into a build failure, so a floating toolchain breaks CI
+  # on lints that did not exist when the code was written. Bump deliberately.
   clippy:
-    name: Clippy
+    name: Clippy (pinned rustc)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.96.0
         with:
           components: clippy
       - run: cargo clippy --all-targets -- -D warnings

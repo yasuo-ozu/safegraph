@@ -10,8 +10,7 @@ resolver = "2"
 name = "safegraph"
 version = "0.1.0"
 edition = "2021"
-# Core MSRV. The optional `matrix` backend pulls `sprs`/`ndarray`, which need
-# a newer rustc (1.64+), so enabling `matrix` raises the effective MSRV.
+# Core MSRV over `--no-default-features`
 rust-version = "1.56"
 authors = ["yasuo-ozu <yasuo@ozu.email>"]
 description = "A type-safe, scope-aware graph library that leverages Rust's type system to prevent common graph-related bugs at compile time"
@@ -29,9 +28,8 @@ matrix = ["sprs"]
 
 [dependencies]
 safegraph-macros = { path = "macro", version = "0.1.0" }
-rustversion = "1"
 num-traits = "0.2"
-unicode-width = "0.1.14"
+unicode-width = "0.1"
 sprs = { version = "0.11", default-features = false, optional = true }
 
 [dev-dependencies]
@@ -51,10 +49,3 @@ harness = false
 name = "ui"
 path = "tests/ui.rs"
 harness = false
-# Excluded from the default `cargo test` set: UI snapshots capture rustc's
-# diagnostic output, which is not stable across compiler versions, so they run
-# only on a pinned toolchain — the dedicated `ui` CI job invokes them explicitly
-# via `cargo test --test ui` (which still selects this target despite `test =
-# false`). This is target selection, not a skip: the suite on floating `stable`
-# simply doesn't include them.
-test = false

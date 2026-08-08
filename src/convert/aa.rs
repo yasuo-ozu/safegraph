@@ -98,13 +98,18 @@ impl<T: Display> From<(T, Option<AnsiColor>)> for AaLabel {
 
 /// Draw an arbitrary binary graph on a width-constrained virtual canvas.
 ///
-/// Every node is placed exactly once. Connected nodes are kept close by a
-/// deterministic breadth-first layout, then edges are routed orthogonally
-/// around node boxes. The router supports cycles, self-loops, parallel edges,
-/// disconnected components and both directed and undirected graphs. Dense
-/// drawings use compact `#N` route markers and an edge-label legend;
-/// an arrowhead marks each directed edge's destination, and `x` marks a
-/// geometric crossing where the two edges do not join.
+/// Every node is placed exactly once. Weakly connected components are rendered
+/// independently, and connected nodes are kept close by a deterministic
+/// layered layout before edges are routed orthogonally around node boxes.
+/// Dense directed strongly connected components use a compact adjacency matrix
+/// when it fits the requested width. The router supports cycles, self-loops,
+/// parallel edges, disconnected components and both directed and undirected
+/// graphs. Reciprocal directed edges with the same label text are combined
+/// one-for-one into a single route with an arrowhead at each end; reciprocal
+/// edges with different labels remain separate. Dense drawings use compact
+/// `#N` route markers and an edge-label legend; an arrowhead marks each directed
+/// edge's destination, and `x` marks a geometric crossing where the two edges
+/// do not join.
 pub fn to_aa<G>(graph: &G, maximum_width: usize) -> String
 where
     G: Graph + Bigraph + ?Sized,
@@ -257,6 +262,12 @@ impl Canvas {
             (Some(first), Some(last)) => (first, last),
             _ => return String::new(),
         };
+        let left = (first..=last)
+            .filter_map(|y| {
+                (0..self.width).find(|&x| self.cells[self.index(Point { x, y })].ch != ' ')
+            })
+            .min()
+            .unwrap_or(0);
 
         let mut output = String::new();
         for y in first..=last {
@@ -264,7 +275,7 @@ impl Canvas {
                 .rfind(|&x| self.cells[self.index(Point { x, y })].ch != ' ')
                 .map_or(0, |x| x + 1);
             let mut active_color = None;
-            for x in 0..end {
+            for x in left..end {
                 let cell = self.cells[self.index(Point { x, y })];
                 if cell.ch == '\0' {
                     continue;
@@ -290,16 +301,6 @@ impl Canvas {
 
     fn row_has_content(&self, y: usize) -> bool {
         (0..self.width).any(|x| self.cells[self.index(Point { x, y })].ch != ' ')
-    }
-
-    fn grow(&mut self, rows: usize) {
-        self.cells
-            .extend(std::iter::repeat(Cell::default()).take(self.width * rows));
-        self.blocked
-            .extend(std::iter::repeat(false).take(self.width * rows));
-        self.route_mask
-            .extend(std::iter::repeat(0).take(self.width * rows));
-        self.height += rows;
     }
 }
 
@@ -328,13 +329,64 @@ struct Port {
 
 struct RoutedEdge {
     path: Vec<Point>,
+    start_arrow: char,
     arrow: char,
     label: AaLabel,
     number: usize,
+    bidirectional: bool,
+}
+
+#[derive(Clone)]
+struct RenderEdge {
+    from: usize,
+    to: usize,
+    label: AaLabel,
+    bidirectional: bool,
+}
+
+fn unify_reciprocal_edges(
+    mut edges: Vec<(usize, usize, AaLabel)>,
+    directed: bool,
+) -> Vec<RenderEdge> {
+    edges.sort_by(|left, right| {
+        (left.0, left.1, left.2.text.as_str()).cmp(&(right.0, right.1, right.2.text.as_str()))
+    });
+    let mut consumed = vec![false; edges.len()];
+    let mut unified = Vec::with_capacity(edges.len());
+    for index in 0..edges.len() {
+        if consumed[index] {
+            continue;
+        }
+        let (from, to, label) = &edges[index];
+        let reciprocal = if directed && from != to {
+            (index + 1..edges.len()).find(|&other| {
+                !consumed[other]
+                    && edges[other].0 == *to
+                    && edges[other].1 == *from
+                    && edges[other].2.text == label.text
+            })
+        } else {
+            None
+        };
+        let mut label = label.clone();
+        if let Some(other) = reciprocal {
+            consumed[other] = true;
+            if edges[other].2.color != label.color {
+                label.color = None;
+            }
+        }
+        unified.push(RenderEdge {
+            from: *from,
+            to: *to,
+            label,
+            bidirectional: reciprocal.is_some(),
+        });
+    }
+    unified
 }
 
 fn render(
-    mut nodes: Vec<AaLabel>,
+    nodes: Vec<AaLabel>,
     edges: Vec<(usize, usize, AaLabel)>,
     directed: bool,
     maximum_width: usize,
@@ -344,6 +396,54 @@ fn render(
     }
     if maximum_width < 7 {
         return render_tiny(nodes, maximum_width);
+    }
+
+    let edges = unify_reciprocal_edges(edges, directed);
+    let graph_adjacency = adjacency(nodes.len(), &edges);
+    let components = weak_components(&graph_adjacency);
+    let mut drawings = Vec::with_capacity(components.len());
+    for mut component in components {
+        component.sort_unstable();
+        let mut local_index = vec![usize::MAX; nodes.len()];
+        let local_nodes: Vec<_> = component
+            .iter()
+            .enumerate()
+            .map(|(local, &global)| {
+                local_index[global] = local;
+                nodes[global].clone()
+            })
+            .collect();
+        let local_edges: Vec<_> = edges
+            .iter()
+            .filter_map(|edge| {
+                let from = local_index[edge.from];
+                let to = local_index[edge.to];
+                (from != usize::MAX && to != usize::MAX).then(|| RenderEdge {
+                    from,
+                    to,
+                    label: edge.label.clone(),
+                    bidirectional: edge.bidirectional,
+                })
+            })
+            .collect();
+        drawings.push(render_component(
+            local_nodes,
+            local_edges,
+            directed,
+            maximum_width,
+        ));
+    }
+    drawings.join("\n")
+}
+
+fn render_component(
+    mut nodes: Vec<AaLabel>,
+    edges: Vec<RenderEdge>,
+    directed: bool,
+    maximum_width: usize,
+) -> String {
+    if let Some(matrix) = render_dense_matrix(&nodes, &edges, directed, maximum_width) {
+        return matrix;
     }
 
     let label_limit = maximum_width.saturating_sub(6).max(1);
@@ -356,15 +456,15 @@ fn render(
         .collect();
     let mut incoming = vec![0usize; nodes.len()];
     let mut outgoing = vec![0usize; nodes.len()];
-    for &(from, to, _) in &edges {
-        if from == to {
+    for edge in &edges {
+        if edge.from == edge.to {
             continue;
         }
-        outgoing[from] += 1;
-        incoming[to] += 1;
-        if !directed {
-            outgoing[to] += 1;
-            incoming[from] += 1;
+        outgoing[edge.from] += 1;
+        incoming[edge.to] += 1;
+        if !directed || edge.bidirectional {
+            outgoing[edge.to] += 1;
+            incoming[edge.from] += 1;
         }
     }
     for (node, width) in widths.iter_mut().enumerate() {
@@ -386,34 +486,50 @@ fn render(
     }
 
     let placed: Vec<_> = placed.into_iter().map(Option::unwrap).collect();
-    let dense = edges.len() >= 8 && edges.len() > nodes.len();
+    let arc_count = edges
+        .iter()
+        .map(|edge| if edge.bidirectional { 2 } else { 1 })
+        .sum::<usize>();
+    let dense = arc_count >= 8 && arc_count > nodes.len();
     let mut route_order: Vec<_> = edges.into_iter().enumerate().collect();
-    route_order.sort_by_key(|(_, (from, to, _))| {
-        let source = &placed[*from];
-        let target = &placed[*to];
+    route_order.sort_by_key(|(_, edge)| {
+        let source = &placed[edge.from];
+        let target = &placed[edge.to];
+        let routing_class = if edge.bidirectional {
+            0
+        } else if edge.from != edge.to {
+            1
+        } else {
+            2
+        };
         (
-            usize::from(from != to),
+            routing_class,
             absolute_difference(source.y, target.y) + absolute_difference(source.x, target.x),
         )
     });
     let mut routed = Vec::new();
-    for (number, (from, to, label)) in route_order {
+    for (number, edge) in route_order {
         let route_label = if dense {
             AaLabel {
                 text: format!("#{}", number + 1),
-                color: label.color,
+                color: edge.label.color,
             }
         } else {
-            label.clone()
+            edge.label.clone()
         };
-        if let Some((path, arrow, _route_label)) =
-            route_edge(&mut canvas, &placed[from], &placed[to], route_label)
-        {
+        if let Some((path, start_arrow, arrow, _route_label)) = route_edge(
+            &mut canvas,
+            &placed[edge.from],
+            &placed[edge.to],
+            route_label,
+        ) {
             routed.push(RoutedEdge {
                 path,
+                start_arrow,
                 arrow,
-                label,
+                label: edge.label,
                 number: number + 1,
+                bidirectional: edge.bidirectional,
             });
         }
     }
@@ -456,36 +572,248 @@ fn render(
     // Arrowheads are drawn last so labels and route markers cannot erase them.
     if directed {
         for edge in &routed {
+            if edge.bidirectional {
+                canvas.put(
+                    *edge.path.first().unwrap(),
+                    edge.start_arrow,
+                    edge.label.color,
+                );
+            }
             canvas.put(*edge.path.last().unwrap(), edge.arrow, edge.label.color);
         }
     }
 
-    if !legend.is_empty() {
-        let first_row = (0..canvas.height)
-            .rfind(|&y| canvas.row_has_content(y))
-            .map_or(0, |y| y + 2);
-        let required_height = first_row + legend.len() + 1;
-        if required_height > canvas.height {
-            canvas.grow(required_height - canvas.height);
-        }
-        canvas.put_text(
-            Point { x: 0, y: first_row },
-            "edge labels (x = crossing):",
-            None,
+    let drawing = canvas.render();
+    if legend.is_empty() {
+        return drawing;
+    }
+
+    let legend_labels: Vec<_> = legend.iter().map(|(_, label, _)| label).collect();
+    if let Some(label) = common_label(&legend_labels) {
+        legend = vec![(0, label.clone(), format!("all edge labels: {}", label.text))];
+    }
+    let mut legend_canvas = Canvas::new(maximum_width, legend.len() + 1);
+    legend_canvas.put_text(Point { x: 0, y: 0 }, "edge labels (x = crossing):", None);
+    for (offset, (_, label, description)) in legend.into_iter().enumerate() {
+        let text = truncate(&description, maximum_width);
+        legend_canvas.put_text(
+            Point {
+                x: 0,
+                y: offset + 1,
+            },
+            &text,
+            label.color,
         );
-        for (offset, (_, label, description)) in legend.into_iter().enumerate() {
-            let text = truncate(&description, canvas.width);
-            canvas.put_text(
-                Point {
-                    x: 0,
-                    y: first_row + offset + 1,
-                },
-                &text,
-                label.color,
-            );
+    }
+    format!("{}\n{}", drawing, legend_canvas.render())
+}
+
+fn render_dense_matrix(
+    nodes: &[AaLabel],
+    edges: &[RenderEdge],
+    directed: bool,
+    maximum_width: usize,
+) -> Option<String> {
+    let node_count = nodes.len();
+    let arc_count = edges
+        .iter()
+        .map(|edge| if edge.bidirectional { 2 } else { 1 })
+        .sum::<usize>();
+    if !directed
+        || node_count < 3
+        || arc_count < node_count.saturating_mul(2)
+        || !is_strongly_connected(node_count, edges)
+    {
+        return None;
+    }
+
+    let mut cells = vec![vec![Vec::<usize>::new(); node_count]; node_count];
+    for (number, edge) in edges.iter().enumerate() {
+        cells[edge.from][edge.to].push(number + 1);
+        if edge.bidirectional {
+            cells[edge.to][edge.from].push(number + 1);
         }
     }
-    canvas.render()
+    let cell_text: Vec<Vec<String>> = cells
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|edge_numbers| {
+                    if edge_numbers.is_empty() {
+                        ".".to_owned()
+                    } else {
+                        edge_numbers
+                            .iter()
+                            .map(|number| format!("#{}", number))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    let headers: Vec<_> = nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| format!("{}:{}", index + 1, node.text))
+        .collect();
+    let row_width = decimal_width(node_count).max(3);
+    let column_widths: Vec<_> = (0..node_count)
+        .map(|column| {
+            let header_width = UnicodeWidthStr::width(headers[column].as_str());
+            let cell_width = (0..node_count)
+                .map(|row| UnicodeWidthStr::width(cell_text[row][column].as_str()))
+                .max()
+                .unwrap_or(1);
+            header_width.max(cell_width)
+        })
+        .collect();
+    let table_width = row_width + column_widths.iter().map(|width| width + 1).sum::<usize>();
+    if table_width > maximum_width {
+        return None;
+    }
+
+    let mut output = String::new();
+    output.push_str(&truncate(
+        "dense adjacency matrix (row source -> column target):",
+        maximum_width,
+    ));
+    output.push('\n');
+    push_padded_text(&mut output, "row", row_width, None);
+    for (column, header) in headers.iter().enumerate() {
+        output.push(' ');
+        push_padded_text(
+            &mut output,
+            header,
+            column_widths[column],
+            nodes[column].color,
+        );
+    }
+    trim_trailing_spaces(&mut output);
+    output.push('\n');
+
+    for row in 0..node_count {
+        let row_number = format!("{}", row + 1);
+        output.push_str(&" ".repeat(row_width - row_number.len()));
+        output.push_str(&row_number);
+        for (column, &column_width) in column_widths.iter().enumerate() {
+            output.push(' ');
+            let edge_color = common_edge_color(&cells[row][column], edges);
+            push_padded_text(
+                &mut output,
+                &cell_text[row][column],
+                column_width,
+                edge_color,
+            );
+        }
+        trim_trailing_spaces(&mut output);
+        output.push('\n');
+    }
+
+    if !edges.is_empty() {
+        output.push('\n');
+        let labels: Vec<_> = edges.iter().map(|edge| &edge.label).collect();
+        if let Some(label) = common_label(&labels) {
+            output.push_str("all edge labels: ");
+            let text = truncate(
+                &label.text,
+                maximum_width.saturating_sub("all edge labels: ".len()),
+            );
+            push_colored_text(&mut output, &text, label.color);
+            output.push('\n');
+        } else {
+            output.push_str("edge labels:\n");
+            for (number, edge) in edges.iter().enumerate() {
+                let text = truncate(
+                    &format!("#{} {}", number + 1, edge.label.text),
+                    maximum_width,
+                );
+                push_colored_text(&mut output, &text, edge.label.color);
+                output.push('\n');
+            }
+        }
+    }
+    Some(output)
+}
+
+fn is_strongly_connected(node_count: usize, edges: &[RenderEdge]) -> bool {
+    let mut outgoing = vec![Vec::new(); node_count];
+    let mut incoming = vec![Vec::new(); node_count];
+    for edge in edges {
+        outgoing[edge.from].push(edge.to);
+        incoming[edge.to].push(edge.from);
+        if edge.bidirectional {
+            outgoing[edge.to].push(edge.from);
+            incoming[edge.from].push(edge.to);
+        }
+    }
+    reachable_count(&outgoing) == node_count && reachable_count(&incoming) == node_count
+}
+
+fn reachable_count(adjacency: &[Vec<usize>]) -> usize {
+    let mut seen = vec![false; adjacency.len()];
+    seen[0] = true;
+    let mut stack = vec![0];
+    while let Some(node) = stack.pop() {
+        for &next in &adjacency[node] {
+            if !seen[next] {
+                seen[next] = true;
+                stack.push(next);
+            }
+        }
+    }
+    seen.into_iter().filter(|seen| *seen).count()
+}
+
+fn decimal_width(mut value: usize) -> usize {
+    let mut width = 1;
+    while value >= 10 {
+        value /= 10;
+        width += 1;
+    }
+    width
+}
+
+fn common_edge_color(edge_numbers: &[usize], edges: &[RenderEdge]) -> Option<AnsiColor> {
+    let first = *edge_numbers.first()?;
+    let color = edges[first - 1].label.color;
+    edge_numbers
+        .iter()
+        .all(|number| edges[*number - 1].label.color == color)
+        .then(|| color)
+        .flatten()
+}
+
+fn push_padded_text(output: &mut String, text: &str, width: usize, color: Option<AnsiColor>) {
+    push_colored_text(output, text, color);
+    output.push_str(&" ".repeat(width - UnicodeWidthStr::width(text)));
+}
+
+fn push_colored_text(output: &mut String, text: &str, color: Option<AnsiColor>) {
+    if let Some(color) = color {
+        output.push_str(&color.prefix());
+        output.push_str(text);
+        output.push_str("\x1b[0m");
+    } else {
+        output.push_str(text);
+    }
+}
+
+fn common_label(labels: &[&AaLabel]) -> Option<AaLabel> {
+    if labels.len() < 2 || labels.iter().any(|label| label.text != labels[0].text) {
+        return None;
+    }
+    let mut label = labels[0].clone();
+    if labels.iter().any(|other| other.color != label.color) {
+        label.color = None;
+    }
+    Some(label)
+}
+
+fn trim_trailing_spaces(output: &mut String) {
+    while output.ends_with(' ') {
+        output.pop();
+    }
 }
 
 fn render_tiny(nodes: Vec<AaLabel>, maximum_width: usize) -> String {
@@ -497,14 +825,14 @@ fn render_tiny(nodes: Vec<AaLabel>, maximum_width: usize) -> String {
     output
 }
 
-fn adjacency(node_count: usize, edges: &[(usize, usize, AaLabel)]) -> Vec<Vec<usize>> {
+fn adjacency(node_count: usize, edges: &[RenderEdge]) -> Vec<Vec<usize>> {
     let mut adjacency = vec![Vec::new(); node_count];
-    for &(from, to, _) in edges {
-        if !adjacency[from].contains(&to) {
-            adjacency[from].push(to);
+    for edge in edges {
+        if !adjacency[edge.from].contains(&edge.to) {
+            adjacency[edge.from].push(edge.to);
         }
-        if !adjacency[to].contains(&from) {
-            adjacency[to].push(from);
+        if !adjacency[edge.to].contains(&edge.from) {
+            adjacency[edge.to].push(edge.from);
         }
     }
     for neighbors in &mut adjacency {
@@ -542,7 +870,7 @@ fn weak_components(adjacency: &[Vec<usize>]) -> Vec<Vec<usize>> {
 fn layered_layout(
     node_count: usize,
     widths: &[usize],
-    edges: &[(usize, usize, AaLabel)],
+    edges: &[RenderEdge],
     directed: bool,
     maximum_width: usize,
 ) -> (Vec<(usize, usize)>, usize) {
@@ -564,13 +892,18 @@ fn layered_layout(
         for (layer_index, layer) in layers.into_iter().enumerate() {
             let rows = pack_layer(&layer, widths, maximum_width);
             for row in rows {
-                let total_width = row.iter().map(|&node| widths[node]).sum::<usize>()
-                    + row.len().saturating_sub(1) * 4;
-                let mut x = (maximum_width.saturating_sub(total_width)) / 2;
+                let node_width = row.iter().map(|&node| widths[node]).sum::<usize>();
+                let gap_count = row.len().saturating_sub(1);
+                let gap = maximum_width
+                    .saturating_sub(2 + node_width)
+                    .checked_div(gap_count)
+                    .map_or(0, |available_gap| available_gap.clamp(4, 12));
+                let total_width = node_width + gap_count * gap;
+                let mut x = maximum_width.saturating_sub(total_width) / 2;
                 x = x.max(1);
                 for node in row {
                     positions[node] = (x, y);
-                    x += widths[node] + 4;
+                    x += widths[node] + gap;
                 }
                 y += 5;
             }
@@ -626,13 +959,17 @@ fn undirected_layers(component: &[usize], adjacency: &[Vec<usize>]) -> Vec<Vec<u
 fn directed_layers(
     component: &[usize],
     node_count: usize,
-    edges: &[(usize, usize, AaLabel)],
+    edges: &[RenderEdge],
 ) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
     let mut outgoing = vec![Vec::new(); node_count];
     let mut incoming = vec![Vec::new(); node_count];
-    for &(from, to, _) in edges {
-        outgoing[from].push(to);
-        incoming[to].push(from);
+    for edge in edges {
+        outgoing[edge.from].push(edge.to);
+        incoming[edge.to].push(edge.from);
+        if edge.bidirectional {
+            outgoing[edge.to].push(edge.from);
+            incoming[edge.from].push(edge.to);
+        }
     }
     let mut allowed = vec![false; node_count];
     for &node in component {
@@ -689,15 +1026,19 @@ fn directed_layers(
     let scc_count = strongly_connected.len();
     let mut successors = vec![Vec::new(); scc_count];
     let mut indegree = vec![0usize; scc_count];
-    for &(from, to, _) in edges {
-        if !allowed[from] || !allowed[to] {
+    for edge in edges {
+        if !allowed[edge.from] || !allowed[edge.to] {
             continue;
         }
-        let source = component_of[from];
-        let target = component_of[to];
+        let source = component_of[edge.from];
+        let target = component_of[edge.to];
         if source != target && !successors[source].contains(&target) {
             successors[source].push(target);
             indegree[target] += 1;
+        }
+        if edge.bidirectional && source != target && !successors[target].contains(&source) {
+            successors[target].push(source);
+            indegree[source] += 1;
         }
     }
     let mut queue: VecDeque<_> = (0..scc_count).filter(|&scc| indegree[scc] == 0).collect();
@@ -917,17 +1258,17 @@ fn route_edge(
     from: &PlacedNode,
     to: &PlacedNode,
     mut label: AaLabel,
-) -> Option<(Vec<Point>, char, AaLabel)> {
+) -> Option<(Vec<Point>, char, char, AaLabel)> {
     label.text = truncate(&label.text, (canvas.width / 3).max(1));
     if std::ptr::eq(from, to) {
         if let Some(path) = self_loop_path(canvas, from) {
             draw_path(canvas, &path, label.color);
-            return Some((path, '^', label));
+            return Some((path, '^', '^', label));
         }
     }
     let from_ports = ports(from, canvas);
     let to_ports = ports(to, canvas);
-    let mut best: Option<(usize, Vec<Point>, char)> = None;
+    let mut best: Option<(usize, Vec<Point>, char, char)> = None;
     let (preferred_start, preferred_end) = preferred_sides(from, to);
     for preferred_only in [true, false] {
         for &start in &from_ports {
@@ -949,9 +1290,9 @@ fn route_edge(
                         + endpoint_occupancy_penalty(canvas, end.point);
                     if best
                         .as_ref()
-                        .map_or(true, |(best_cost, _, _)| cost < *best_cost)
+                        .map_or(true, |(best_cost, _, _, _)| cost < *best_cost)
                     {
-                        best = Some((cost, path, end.arrow));
+                        best = Some((cost, path, start.arrow, end.arrow));
                     }
                 }
             }
@@ -960,9 +1301,9 @@ fn route_edge(
             break;
         }
     }
-    let (_, path, arrow) = best?;
+    let (_, path, start_arrow, arrow) = best?;
     draw_path(canvas, &path, label.color);
-    Some((path, arrow, label))
+    Some((path, start_arrow, arrow, label))
 }
 
 fn endpoint_occupancy_penalty(canvas: &Canvas, point: Point) -> usize {
@@ -1052,6 +1393,7 @@ fn self_loop_path(canvas: &Canvas, node: &PlacedNode) -> Option<Vec<Point>> {
         },
     ];
 
+    let mut occupied_fallback = None;
     for candidate in candidates.iter().flatten() {
         let (start, outside, target) = *candidate;
         let corner = Point {
@@ -1067,14 +1409,23 @@ fn self_loop_path(canvas: &Canvas, node: &PlacedNode) -> Option<Vec<Point>> {
         append_segment(&mut path, corner);
         append_segment(&mut path, below_target);
         append_segment(&mut path, target);
-        if path
+        if !path
             .iter()
             .all(|&point| !canvas.blocked[canvas.index(point)])
         {
+            continue;
+        }
+        if path
+            .iter()
+            .all(|&point| canvas.route_mask[canvas.index(point)] == 0)
+        {
             return Some(path);
         }
+        if occupied_fallback.is_none() {
+            occupied_fallback = Some(path);
+        }
     }
-    None
+    occupied_fallback
 }
 
 fn append_segment(path: &mut Vec<Point>, target: Point) {
@@ -1167,11 +1518,27 @@ fn shortest_path(canvas: &Canvas, start: Point, end: Point) -> Option<(usize, Ve
             let nearby_parallel_routes =
                 adjacent_parallel_route_count(canvas, next, next_direction);
             let bend = usize::from(direction != next_direction);
-            // A route in the immediately adjacent row/column is technically
-            // unambiguous, but parallel stems then look like one thick line.
-            // Charge enough clearance cost to make the router leave a blank
-            // lane whenever the available canvas permits it.
-            let next_cost = cost + 1 + occupied * 15 + nearby_parallel_routes * 12 + bend * 3;
+            let route_bit = if next_direction == 0 || next_direction == 2 {
+                2
+            } else {
+                1
+            };
+            let crossing = usize::from(
+                canvas.route_mask[next_cell] != 0 && canvas.route_mask[next_cell] & route_bit == 0,
+            );
+            let (nearby_routes, nearby_bends, nearby_nodes) = nearby_obstacle_counts(canvas, next);
+            // Crossings and adjacent bends remain legal when the canvas is
+            // genuinely constrained, but clear lanes are substantially
+            // cheaper whenever spare room exists.
+            let next_cost = cost
+                + 1
+                + occupied * 30
+                + crossing * 15
+                + nearby_parallel_routes * 14
+                + nearby_routes * 2
+                + nearby_bends * 18
+                + nearby_nodes * 3
+                + bend * (4 + nearby_routes * 8);
             let next_state = next_cell * 4 + next_direction;
             if next_cost < distance[next_state] {
                 distance[next_state] = next_cost;
@@ -1241,6 +1608,39 @@ fn adjacent_parallel_route_count(canvas: &Canvas, point: Point, direction: usize
         .flatten()
         .filter(|&neighbor| canvas.route_mask[canvas.index(neighbor)] & route_bit != 0)
         .count()
+}
+
+fn nearby_obstacle_counts(canvas: &Canvas, point: Point) -> (usize, usize, usize) {
+    let mut routes = 0;
+    let mut bends = 0;
+    let mut nodes = 0;
+    for dy in -1isize..=1 {
+        for dx in -1isize..=1 {
+            if dx == 0 && dy == 0 {
+                continue;
+            }
+            let x = point.x as isize + dx;
+            let y = point.y as isize + dy;
+            if x < 0 || y < 0 || x >= canvas.width as isize || y >= canvas.height as isize {
+                continue;
+            }
+            let neighbor = Point {
+                x: x as usize,
+                y: y as usize,
+            };
+            let index = canvas.index(neighbor);
+            if canvas.route_mask[index] != 0 {
+                routes += 1;
+                if matches!(canvas.cells[index].ch, '+' | 'x') {
+                    bends += 1;
+                }
+            }
+            if canvas.blocked[index] {
+                nodes += 1;
+            }
+        }
+    }
+    (routes, bends, nodes)
 }
 
 fn draw_path(canvas: &mut Canvas, path: &[Point], color: Option<AnsiColor>) {
@@ -1423,7 +1823,36 @@ fn truncate(text: &str, maximum_width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{draw_path, port_offsets, shortest_path, Canvas, Point};
+    use super::{
+        draw_path, port_offsets, shortest_path, unify_reciprocal_edges, AaLabel, AnsiColor, Canvas,
+        Point,
+    };
+
+    #[test]
+    fn reciprocal_edges_with_the_same_text_are_unified() {
+        let edges = vec![
+            (0, 1, AaLabel::colored("same", AnsiColor::Red)),
+            (1, 0, AaLabel::colored("same", AnsiColor::Blue)),
+        ];
+
+        let unified = unify_reciprocal_edges(edges, true);
+        assert_eq!(unified.len(), 1);
+        assert!(unified[0].bidirectional);
+        assert_eq!(unified[0].label.text, "same");
+        assert_eq!(unified[0].label.color, None);
+    }
+
+    #[test]
+    fn reciprocal_edges_with_different_text_stay_separate() {
+        let edges = vec![
+            (0, 1, AaLabel::plain("forward")),
+            (1, 0, AaLabel::plain("backward")),
+        ];
+
+        let unified = unify_reciprocal_edges(edges, true);
+        assert_eq!(unified.len(), 2);
+        assert!(unified.iter().all(|edge| !edge.bidirectional));
+    }
 
     #[test]
     fn perpendicular_routes_are_crossings_not_junctions() {
@@ -1464,6 +1893,21 @@ mod tests {
         assert!(
             path[2..path.len() - 2].iter().all(|point| point.x <= 5),
             "parallel route did not open a clear lane: {path:?}"
+        );
+    }
+
+    #[test]
+    fn router_avoids_a_crossing_when_a_clear_lane_exists() {
+        let mut canvas = Canvas::new(13, 9);
+        let existing: Vec<_> = (3..=9).map(|x| Point { x, y: 4 }).collect();
+        draw_path(&mut canvas, &existing, None);
+
+        let (_, path) = shortest_path(&canvas, Point { x: 6, y: 1 }, Point { x: 6, y: 7 }).unwrap();
+
+        assert!(
+            path.iter()
+                .all(|point| canvas.route_mask[canvas.index(*point)] == 0),
+            "router crossed despite an open lane: {path:?}"
         );
     }
 
