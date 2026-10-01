@@ -22,7 +22,7 @@ error: unexpected end of input, expected identifier
 11 |     let _d: VecGraph<u32, u32> = safegraph::graph!({1} -->);
    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: this error originates in the macro `safegraph_macros::graph` which comes from the expansion of the macro `safegraph::graph` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__private::graph` which comes from the expansion of the macro `safegraph::graph` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: expected identifier
   --> tests/ui/graph_macro_many_syntax_errors.rs:13:52

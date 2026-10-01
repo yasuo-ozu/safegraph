@@ -205,8 +205,15 @@ pub type HyperGraph<N, E> =
 #[macro_export]
 macro_rules! graph {
     ($($tt:tt)*) => {
-        safegraph_macros::graph!($crate, $($tt)*)
+        $crate::__private::graph!($crate, $($tt)*)
     };
+}
+
+/// Re-exports used by [`graph!`]'s expansion, so callers need not depend on
+/// `safegraph-macros` themselves. Not public API.
+#[doc(hidden)]
+pub mod __private {
+    pub use safegraph_macros::graph;
 }
 
 pub use graph::Graph;
