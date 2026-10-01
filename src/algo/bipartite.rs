@@ -136,19 +136,18 @@ where
                         eix.borrow(),
                     )
                 } {
-                    let endpoint = endpoint.borrow().clone();
-                    if endpoint == node {
+                    let neighbor: &G::NodeIx = endpoint.borrow();
+                    if *neighbor == node {
                         continue;
                     }
                     found_other = true;
-                    let neighbor = endpoint;
-                    if let Some(&existing_color) = color.get(&neighbor) {
+                    if let Some(&existing_color) = color.get(neighbor) {
                         if existing_color == node_color {
                             return None; // Same color on both sides of an edge
                         }
                     } else {
                         color.insert(neighbor.clone(), !node_color);
-                        queue.push_back(neighbor);
+                        queue.push_back(neighbor.clone());
                     }
                 }
                 // Self-loop: all endpoints equal node, graph is not bipartite

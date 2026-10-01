@@ -438,7 +438,8 @@ where
     V: 'r,
     E: 'r,
 {
-    unsafe fn node_unchecked_mut(&mut self, node_ix: Self::NodeIx) -> &mut Self::Node {
+    unsafe fn node_unchecked_mut(&mut self, node_ix: &Self::NodeIx) -> &mut Self::Node {
+        let node_ix = *node_ix;
         unsafe { self.nodes.get_value_unchecked_mut(&node_ix) }
     }
 
@@ -465,7 +466,8 @@ where
     VIx: Copy + IndexKey + Display + Debug + 'static,
     EIx: Copy + IndexKey + Display + Debug + 'static,
 {
-    unsafe fn edge_unchecked_mut(&mut self, edge_ix: Self::EdgeIx) -> &mut Self::Edge {
+    unsafe fn edge_unchecked_mut(&mut self, edge_ix: &Self::EdgeIx) -> &mut Self::Edge {
+        let edge_ix = *edge_ix;
         unsafe { self.edges.get_value_unchecked_mut(&edge_ix) }
     }
 }
@@ -480,7 +482,8 @@ where
     VIx: Copy + IndexKey + Display + Debug + 'static,
     EIx: Copy + IndexKey + Display + Debug + 'static,
 {
-    unsafe fn take_edge_unchecked(&mut self, edge_ix: Self::EdgeIx) -> Self::Edge {
+    unsafe fn take_edge_unchecked(&mut self, edge_ix: &Self::EdgeIx) -> Self::Edge {
+        let edge_ix = *edge_ix;
         let (e, endpoints, swapped) = unsafe { self.edges.take_unchecked(&edge_ix) };
         for vix in endpoints.into_iter() {
             let storage = unsafe { self.nodes.get_storage_unchecked_mut(&vix) };
@@ -518,7 +521,8 @@ where
     VIx: Copy + IndexKey + Display + Debug + 'static,
     EIx: Copy + IndexKey + Display + Debug + 'static,
 {
-    unsafe fn take_node_unchecked(&mut self, node_ix: Self::NodeIx) -> Self::Node {
+    unsafe fn take_node_unchecked(&mut self, node_ix: &Self::NodeIx) -> Self::Node {
+        let node_ix = *node_ix;
         // Re-reading the incidence set after each removal picks up EIxs
         // that were rewritten by `take_edge_unchecked`'s swap-remove fixup
         // (Vec-backed EC).
@@ -531,7 +535,7 @@ where
                 Some(eix) => eix,
                 None => break,
             };
-            let _ = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, eix) };
+            let _ = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, &eix) };
         }
 
         let (data, _storage, swapped) = unsafe { self.nodes.take_unchecked(&node_ix) };
@@ -583,14 +587,14 @@ where
             if !self.edges.contains_index(&eix) {
                 continue;
             }
-            let e = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, eix) };
+            let e = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, &eix) };
             edges_out.extend(core::iter::once(e));
         }
         for nix in node_indices {
             if !self.nodes.contains_index(&nix) {
                 continue;
             }
-            let v = unsafe { self.take_node_unchecked(nix) };
+            let v = unsafe { self.take_node_unchecked(&nix) };
             nodes_out.extend(core::iter::once(v));
         }
         (nodes_out, edges_out)

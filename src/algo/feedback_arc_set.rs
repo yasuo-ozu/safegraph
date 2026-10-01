@@ -102,12 +102,14 @@ where
             remaining.insert(node);
         }
 
-        for eix in super::owned_edge_indices(graph) {
-            let tail: G::NodeIx = unsafe { graph.tail_index_unchecked(&eix) }.borrow().clone();
-            let head: G::NodeIx = unsafe { graph.head_index_unchecked(eix) }.borrow().clone();
+        for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices(graph) {
+            let eix: &G::EdgeIx = eix.borrow();
+            let tail = unsafe { graph.tail_index_unchecked(eix) };
+            let head = unsafe { graph.head_index_unchecked(eix) };
+            let (tail, head): (&G::NodeIx, &G::NodeIx) = (tail.borrow(), head.borrow());
             if tail != head {
-                *out_deg.get_mut(&tail).unwrap() += 1;
-                *in_deg.get_mut(&head).unwrap() += 1;
+                *out_deg.get_mut(tail).unwrap() += 1;
+                *in_deg.get_mut(head).unwrap() += 1;
             }
         }
 
@@ -128,15 +130,14 @@ where
                     .collect();
                 for sink in sinks {
                     remaining.remove(&sink);
-                    right.push_front(sink.clone());
                     for pred_eix in unsafe { Directed::edge_indices_to_unchecked(graph, &sink) } {
-                        let pred: G::NodeIx = unsafe { graph.tail_index_unchecked(pred_eix) }
-                            .borrow()
-                            .clone();
-                        if remaining.contains(&pred) && pred != sink {
-                            *cur_out.get_mut(&pred).unwrap() -= 1;
+                        let pred = unsafe { graph.tail_index_unchecked(pred_eix) };
+                        let pred: &G::NodeIx = pred.borrow();
+                        if remaining.contains(pred) && *pred != sink {
+                            *cur_out.get_mut(pred).unwrap() -= 1;
                         }
                     }
+                    right.push_front(sink);
                     changed = true;
                 }
 
@@ -147,19 +148,18 @@ where
                     .collect();
                 for source in sources {
                     remaining.remove(&source);
-                    left.push_back(source.clone());
                     for succ_eix in unsafe {
                         <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
                             graph, &source,
                         )
                     } {
-                        let succ: G::NodeIx = unsafe { graph.head_index_unchecked(succ_eix) }
-                            .borrow()
-                            .clone();
-                        if remaining.contains(&succ) && succ != source {
-                            *cur_in.get_mut(&succ).unwrap() -= 1;
+                        let succ = unsafe { graph.head_index_unchecked(succ_eix) };
+                        let succ: &G::NodeIx = succ.borrow();
+                        if remaining.contains(succ) && *succ != source {
+                            *cur_in.get_mut(succ).unwrap() -= 1;
                         }
                     }
+                    left.push_back(source);
                     changed = true;
                 }
             }
@@ -175,26 +175,24 @@ where
                 .unwrap();
 
             remaining.remove(&best);
-            left.push_back(best.clone());
 
             for succ_eix in unsafe {
                 <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, &best)
             } {
-                let succ: G::NodeIx = unsafe { graph.head_index_unchecked(succ_eix) }
-                    .borrow()
-                    .clone();
-                if remaining.contains(&succ) && succ != best {
-                    *cur_in.get_mut(&succ).unwrap() -= 1;
+                let succ = unsafe { graph.head_index_unchecked(succ_eix) };
+                let succ: &G::NodeIx = succ.borrow();
+                if remaining.contains(succ) && *succ != best {
+                    *cur_in.get_mut(succ).unwrap() -= 1;
                 }
             }
             for pred_eix in unsafe { Directed::edge_indices_to_unchecked(graph, &best) } {
-                let pred: G::NodeIx = unsafe { graph.tail_index_unchecked(pred_eix) }
-                    .borrow()
-                    .clone();
-                if remaining.contains(&pred) && pred != best {
-                    *cur_out.get_mut(&pred).unwrap() -= 1;
+                let pred = unsafe { graph.tail_index_unchecked(pred_eix) };
+                let pred: &G::NodeIx = pred.borrow();
+                if remaining.contains(pred) && *pred != best {
+                    *cur_out.get_mut(pred).unwrap() -= 1;
                 }
             }
+            left.push_back(best);
         }
 
         let mut ordering: Vec<G::NodeIx> = Vec::new();

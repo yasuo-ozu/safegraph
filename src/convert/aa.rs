@@ -149,6 +149,8 @@ where
     }
 
     graph.scope(|ctx| {
+        // Owned keys: one clone per node, so edge endpoints from any borrow of
+        // `ctx` can be looked up through `Borrow`.
         let indices: Vec<_> = crate::algo::owned_node_indices(ctx).collect();
         let index_map: HashMap<_, _> = indices
             .iter()
@@ -161,8 +163,8 @@ where
             .map(|index| sanitize(node_label(ctx.node(index)).into()))
             .collect();
         let mut edges = Vec::new();
-        for edge_index in crate::algo::owned_edge_indices(ctx) {
-            let mut endpoints = ctx.endpoints(&edge_index).into_iter();
+        for edge_index in Graph::edge_indices(ctx) {
+            let mut endpoints = ctx.endpoints(edge_index.clone()).into_iter();
             let from = position(&index_map, endpoints.next().unwrap());
             let to = position(&index_map, endpoints.next().unwrap());
             edges.push((from, to, sanitize(edge_label(ctx.edge(edge_index)).into())));

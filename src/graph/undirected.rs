@@ -171,7 +171,7 @@ where
     G: UpdateNode<'r> + 'r,
     G::Edge: 'r,
 {
-    unsafe fn node_unchecked_mut(&mut self, node_ix: Self::NodeIx) -> &mut Self::Node {
+    unsafe fn node_unchecked_mut(&mut self, node_ix: &Self::NodeIx) -> &mut Self::Node {
         unsafe { <G as UpdateNode<'r>>::node_unchecked_mut(&mut self.inner, node_ix) }
     }
 
@@ -187,7 +187,7 @@ where
 }
 
 impl<G: UpdateEdge> UpdateEdge for Undirected<G> {
-    unsafe fn edge_unchecked_mut(&mut self, edge_ix: Self::EdgeIx) -> &mut Self::Edge {
+    unsafe fn edge_unchecked_mut(&mut self, edge_ix: &Self::EdgeIx) -> &mut Self::Edge {
         unsafe { <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, edge_ix) }
     }
 }
@@ -211,13 +211,13 @@ where
 }
 
 impl<G: RemoveEdge> RemoveEdge for Undirected<G> {
-    unsafe fn take_edge_unchecked(&mut self, edge_ix: Self::EdgeIx) -> Self::Edge {
+    unsafe fn take_edge_unchecked(&mut self, edge_ix: &Self::EdgeIx) -> Self::Edge {
         unsafe { <G as RemoveEdge>::take_edge_unchecked(&mut self.inner, edge_ix) }
     }
 }
 
 impl<G: RemoveNode> RemoveNode for Undirected<G> {
-    unsafe fn take_node_unchecked(&mut self, node_ix: Self::NodeIx) -> Self::Node {
+    unsafe fn take_node_unchecked(&mut self, node_ix: &Self::NodeIx) -> Self::Node {
         unsafe { <G as RemoveNode>::take_node_unchecked(&mut self.inner, node_ix) }
     }
 

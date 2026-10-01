@@ -138,9 +138,9 @@ where
                     let current = current.clone();
 
                     if self.dfs_stack.len() > 1 {
-                        let parent = self.dfs_stack[self.dfs_stack.len() - 2].0.clone();
+                        let parent = &self.dfs_stack[self.dfs_stack.len() - 2].0;
                         let current_ll = self.lowlink[&current];
-                        let parent_ll = self.lowlink.get_mut(&parent).unwrap();
+                        let parent_ll = self.lowlink.get_mut(parent).unwrap();
                         if current_ll < *parent_ll {
                             *parent_ll = current_ll;
                         }
@@ -154,8 +154,9 @@ where
                         loop {
                             let w = self.scc_stack.pop().unwrap();
                             self.on_stack.remove(&w);
-                            scc.push(w.clone());
-                            if w == current {
+                            let done = w == current;
+                            scc.push(w);
+                            if done {
                                 break;
                             }
                         }
@@ -219,10 +220,9 @@ where
                 stack.pop();
             } else {
                 *expanded = true;
-                let current = current.clone();
                 // SAFETY: `current` is an in-graph index and `G: StableNode`.
                 let succs: Vec<G::NodeIx> =
-                    unsafe { graph.neighbor_indices_from_unchecked(current) }.collect();
+                    unsafe { graph.neighbor_indices_from_unchecked(&*current) }.collect();
                 for succ in succs.into_iter().rev() {
                     if visited.insert(succ.clone()) {
                         stack.push((succ, false));
@@ -252,12 +252,13 @@ where
     fn next(&mut self) -> Option<Vec<G::NodeIx>> {
         // Phase 2: find next unassigned node in reverse finish order
         while self.finish_idx < self.finish_order.len() {
-            let node = self.finish_order[self.finish_idx].clone();
+            let i = self.finish_idx;
             self.finish_idx += 1;
 
-            if self.assigned.contains(&node) {
+            if self.assigned.contains(&self.finish_order[i]) {
                 continue;
             }
+            let node = self.finish_order[i].clone();
 
             // DFS on reverse graph using predecessors
             let mut scc = Vec::new();
@@ -265,9 +266,9 @@ where
             self.assigned.insert(node);
 
             while let Some(current) = stack.pop() {
-                scc.push(current.clone());
                 let preds: Vec<G::NodeIx> =
-                    unsafe { self.graph.neighbor_indices_to_unchecked(current) }.collect();
+                    unsafe { self.graph.neighbor_indices_to_unchecked(&current) }.collect();
+                scc.push(current);
                 for pred in preds {
                     if self.assigned.insert(pred.clone()) {
                         stack.push(pred);
@@ -419,11 +420,12 @@ where
     // safe `tail_index` / `head_index` (panic on invalid index).
     let mut seen_edges: HashSet<(usize, usize)> = HashSet::new();
     // SAFETY: edge indices are not exposed to caller
-    for eix in super::owned_edge_indices(graph) {
-        let tail: G::NodeIx = graph.tail_index(&eix).borrow().clone();
-        let head: G::NodeIx = graph.head_index(eix).borrow().clone();
-        let scc_tail = node_to_scc[&tail];
-        let scc_head = node_to_scc[&head];
+    for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices(graph) {
+        let eix: &G::EdgeIx = eix.borrow();
+        let tail = graph.tail_index(eix);
+        let head = graph.head_index(eix);
+        let scc_tail = node_to_scc[Borrow::<G::NodeIx>::borrow(&tail)];
+        let scc_head = node_to_scc[Borrow::<G::NodeIx>::borrow(&head)];
 
         if make_acyclic && scc_tail == scc_head {
             continue;

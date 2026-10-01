@@ -699,7 +699,8 @@ where
     V: 'r,
     E: 'r,
 {
-    unsafe fn node_unchecked_mut(&mut self, node_ix: Self::NodeIx) -> &mut Self::Node {
+    unsafe fn node_unchecked_mut(&mut self, node_ix: &Self::NodeIx) -> &mut Self::Node {
+        let node_ix = *node_ix;
         unsafe { self.nodes.get_value_unchecked_mut(&node_ix) }
     }
 
@@ -725,7 +726,8 @@ where
     VIx: Copy + IndexKey + Display + Debug + 'static,
     EIx: Copy + IndexKey + Display + Debug + 'static,
 {
-    unsafe fn edge_unchecked_mut(&mut self, edge_ix: Self::EdgeIx) -> &mut Self::Edge {
+    unsafe fn edge_unchecked_mut(&mut self, edge_ix: &Self::EdgeIx) -> &mut Self::Edge {
+        let edge_ix = *edge_ix;
         let inner = &mut unsafe { self.nodes.get_storage_unchecked_mut(&edge_ix.0) }.outgoing;
         unsafe { inner.get_value_unchecked_mut(&edge_ix.1) }
     }
@@ -739,7 +741,8 @@ where
     VIx: Copy + IndexKey + Display + Debug + 'static,
     EIx: Copy + IndexKey + Display + Debug + 'static,
 {
-    unsafe fn take_edge_unchecked(&mut self, edge_ix: Self::EdgeIx) -> Self::Edge {
+    unsafe fn take_edge_unchecked(&mut self, edge_ix: &Self::EdgeIx) -> Self::Edge {
+        let edge_ix = *edge_ix;
         let head = edge_ix.0;
         let node_storage = unsafe { self.nodes.get_storage_unchecked_mut(&head) };
         let (edge_value, target, swapped) =
@@ -784,7 +787,8 @@ where
     VIx: Copy + IndexKey + Display + Debug + 'static,
     EIx: Copy + IndexKey + Display + Debug + 'static,
 {
-    unsafe fn take_node_unchecked(&mut self, node_ix: Self::NodeIx) -> Self::Node {
+    unsafe fn take_node_unchecked(&mut self, node_ix: &Self::NodeIx) -> Self::Node {
+        let node_ix = *node_ix;
         let mut incoming_snapshot: Vec<EdgeIx<VIx, EIx>> =
             unsafe { IncomingOps::collect_incoming(&self.nodes, node_ix) };
         // The snapshot is taken once, but each `take_edge_unchecked` may
@@ -797,7 +801,7 @@ where
         incoming_snapshot.sort_unstable_by(|a, b| b.cmp(a));
         // Self-loops are reached again via the outgoing pass below.
         for eix in incoming_snapshot.into_iter().filter(|e| e.0 != node_ix) {
-            let _ = unsafe { self.take_edge_unchecked(eix) };
+            let _ = unsafe { self.take_edge_unchecked(&eix) };
         }
         // Descending order so inner swap-remove relocations don't
         // invalidate later eixs.
@@ -807,7 +811,7 @@ where
         };
         outgoing_eixs.sort_unstable_by(|a, b| b.cmp(a));
         for eix in outgoing_eixs {
-            let _ = unsafe { self.take_edge_unchecked(EdgeIx(node_ix, eix)) };
+            let _ = unsafe { self.take_edge_unchecked(&EdgeIx(node_ix, eix)) };
         }
 
         let (data, _storage, swapped) = unsafe { self.nodes.take_unchecked(&node_ix) };
@@ -875,7 +879,7 @@ where
         edges_to_remove.dedup();
         let mut edges_out = IE::default();
         for eix in edges_to_remove {
-            let data = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, eix) };
+            let data = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, &eix) };
             edges_out.extend(core::iter::once(data));
         }
 
@@ -883,7 +887,7 @@ where
         nodes_to_remove.sort_unstable_by(|a, b| b.cmp(a));
         let mut nodes_out = IN::default();
         for nix in nodes_to_remove {
-            let data = unsafe { <Self as RemoveNode>::take_node_unchecked(self, nix) };
+            let data = unsafe { <Self as RemoveNode>::take_node_unchecked(self, &nix) };
             nodes_out.extend(core::iter::once(data));
         }
         (nodes_out, edges_out)

@@ -463,7 +463,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
         Self: for<'x> UpdateNode<'x>,
     {
         let node_ix = node_ix.borrow();
-        <Self as UpdateNode<'a>>::node_unchecked_mut(self, node_ix.clone())
+        <Self as UpdateNode<'a>>::node_unchecked_mut(self, node_ix)
     }
 
     /// # Safety
@@ -473,7 +473,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
         Self: UpdateEdge,
     {
         let edge_ix = edge_ix.borrow();
-        <Self as UpdateEdge>::edge_unchecked_mut(self, edge_ix.clone())
+        <Self as UpdateEdge>::edge_unchecked_mut(self, edge_ix)
     }
 
     /// Returns a mutable reference to the node at `node_ix`. Panics if the index is invalid.
@@ -485,7 +485,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
         assert!(<Self as GraphOperation<'r>>::contains_node_index(
             self, node_ix
         ));
-        unsafe { <Self as UpdateNode<'r>>::node_unchecked_mut(self, node_ix.clone()) }
+        unsafe { <Self as UpdateNode<'r>>::node_unchecked_mut(self, node_ix) }
     }
 
     /// Returns a mutable reference to the edge at `edge_ix`. Panics if the index is invalid.
@@ -497,7 +497,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
         assert!(<Self as GraphOperation<'_>>::contains_edge_index(
             self, edge_ix
         ));
-        unsafe { <Self as UpdateEdge>::edge_unchecked_mut(self, edge_ix.clone()) }
+        unsafe { <Self as UpdateEdge>::edge_unchecked_mut(self, edge_ix) }
     }
 
     /// Returns the endpoints of `edge_ix`. Panics if the index is invalid. Requires [`StableNode`].
@@ -1543,7 +1543,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
         Self: RemoveNode,
     {
         let node_ix = node_ix.borrow();
-        <Self as RemoveNode>::remove_node_unchecked(self, node_ix.clone())
+        <Self as RemoveNode>::remove_node_unchecked(self, node_ix)
     }
 
     /// Removes the node at `node_ix` and all its incident edges.
@@ -1557,7 +1557,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
             self, node_ix
         ));
         // SAFETY: checked in precondition
-        unsafe { <Self as RemoveNode>::remove_node_unchecked(self, node_ix.clone()) }
+        unsafe { <Self as RemoveNode>::remove_node_unchecked(self, node_ix) }
     }
 
     /// # Safety
@@ -1567,7 +1567,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
         Self: RemoveEdge,
     {
         let edge_ix = edge_ix.borrow();
-        <Self as RemoveEdge>::remove_edge_unchecked(self, edge_ix.clone());
+        <Self as RemoveEdge>::remove_edge_unchecked(self, edge_ix);
     }
 
     /// Removes the edge at `edge_ix`. Panics if the index is invalid.
@@ -1580,7 +1580,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
             self, edge_ix
         ));
         // SAFETY: checked in precondition
-        unsafe { <Self as RemoveEdge>::remove_edge_unchecked(self, edge_ix.clone()) }
+        unsafe { <Self as RemoveEdge>::remove_edge_unchecked(self, edge_ix) }
     }
 
     /// # Safety
@@ -1590,7 +1590,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
         Self: RemoveNode,
     {
         let node_ix = node_ix.borrow();
-        <Self as RemoveNode>::take_node_unchecked(self, node_ix.clone())
+        <Self as RemoveNode>::take_node_unchecked(self, node_ix)
     }
 
     /// Removes the node at `node_ix` and returns its data.
@@ -1604,7 +1604,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
             self, node_ix
         ));
         // SAFETY: checked above.
-        unsafe { <Self as RemoveNode>::take_node_unchecked(self, node_ix.clone()) }
+        unsafe { <Self as RemoveNode>::take_node_unchecked(self, node_ix) }
     }
 
     /// # Safety
@@ -1614,7 +1614,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
         Self: RemoveEdge,
     {
         let edge_ix = edge_ix.borrow();
-        <Self as RemoveEdge>::take_edge_unchecked(self, edge_ix.clone())
+        <Self as RemoveEdge>::take_edge_unchecked(self, edge_ix)
     }
 
     /// Removes the edge at `edge_ix` and returns its data.
@@ -1628,7 +1628,7 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
             self, edge_ix
         ));
         // SAFETY: checked above.
-        unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, edge_ix.clone()) }
+        unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, edge_ix) }
     }
 
     /// Removes selected nodes and edges, returning removed payloads.

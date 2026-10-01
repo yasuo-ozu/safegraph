@@ -158,7 +158,7 @@ where
             continue;
         }
 
-        if goal == Some(node.clone()) {
+        if goal.as_ref() == Some(&node) {
             break;
         }
 
@@ -246,14 +246,16 @@ where
     let mut dist: HashMap<G::NodeIx, (W, Option<G::NodeIx>)> = HashMap::new();
     dist.insert(start, (W::default(), None));
 
-    let edges: Vec<(G::NodeIx, G::NodeIx, W)> = super::owned_edge_indices(graph)
-        .map(|eix| {
-            let tail: G::NodeIx = graph.tail_index_unchecked(&eix).borrow().clone();
-            let head: G::NodeIx = graph.head_index_unchecked(&eix).borrow().clone();
-            let w = edge_weight(Graph::edge_unchecked(graph, eix));
-            (tail, head, w)
-        })
-        .collect();
+    let edges: Vec<(G::NodeIx, G::NodeIx, W)> =
+        <G as crate::graph::GraphOperation<'_>>::edge_indices(graph)
+            .map(|eix| {
+                let eix: &G::EdgeIx = eix.borrow();
+                let tail: G::NodeIx = graph.tail_index_unchecked(eix).borrow().clone();
+                let head: G::NodeIx = graph.head_index_unchecked(eix).borrow().clone();
+                let w = edge_weight(Graph::edge_unchecked(graph, eix));
+                (tail, head, w)
+            })
+            .collect();
 
     BellmanFord {
         edges,
@@ -279,10 +281,10 @@ where
         while self.next().is_some() {}
 
         // Check for negative cycles
-        for (tail, head, w) in self.edges.iter().cloned() {
-            if let Some(&(d, _)) = self.dist.get(&tail) {
-                let new_dist = d + w;
-                let is_shorter = match self.dist.get(&head) {
+        for (tail, head, w) in &self.edges {
+            if let Some(&(d, _)) = self.dist.get(tail) {
+                let new_dist = d + *w;
+                let is_shorter = match self.dist.get(head) {
                     Some(&(existing, _)) => new_dist < existing,
                     None => true,
                 };
@@ -398,11 +400,9 @@ where
         if node == goal {
             // Reconstruct path
             let cost = g_score[&goal];
-            let mut path = vec![goal.clone()];
-            let mut current = goal;
-            while let Some(prev) = came_from.get(&current).cloned() {
+            let mut path = vec![goal];
+            while let Some(prev) = came_from.get(path.last().unwrap()) {
                 path.push(prev.clone());
-                current = prev;
             }
             path.reverse();
             return Some((cost, path));
@@ -455,62 +455,67 @@ where
     F: FnMut(&G::Edge) -> W,
 {
     let nodes: Vec<G::NodeIx> = super::owned_node_indices(graph).collect();
+    let n = nodes.len();
+    let position: HashMap<&G::NodeIx, usize> =
+        nodes.iter().enumerate().map(|(p, ix)| (ix, p)).collect();
     let inf = W::max_value();
 
-    // dist[(i, j)] = shortest distance from i to j, using max_value() as infinity
-    let mut dist: HashMap<(G::NodeIx, G::NodeIx), W> = HashMap::new();
-
-    // Initialize: all pairs to infinity
-    for i in nodes.iter().cloned() {
-        for j in nodes.iter().cloned() {
-            dist.insert(
-                (i.clone(), j.clone()),
-                if i == j { W::default() } else { inf },
-            );
-        }
+    // dist[i * n + j] = shortest distance from nodes[i] to nodes[j], with
+    // max_value() as infinity. Indexing by position keeps the O(n³) relaxation
+    // free of hashing and index clones.
+    let mut dist = vec![inf; n * n];
+    for i in 0..n {
+        dist[i * n + i] = W::default();
     }
 
     // Initialize: direct edges
-    for eix in super::owned_edge_indices(graph) {
-        let tail: G::NodeIx = graph.tail_index(&eix).borrow().clone();
-        let head: G::NodeIx = graph.head_index(&eix).borrow().clone();
+    for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices(graph) {
+        let eix: &G::EdgeIx = eix.borrow();
+        let tail = graph.tail_index(eix);
+        let head = graph.head_index(eix);
+        let (tail, head): (&G::NodeIx, &G::NodeIx) = (tail.borrow(), head.borrow());
+        let cell = position[&tail] * n + position[&head];
         let w = edge_weight(graph.edge(eix));
-        let entry = dist.entry((tail, head)).or_insert(inf);
-        if w < *entry {
-            *entry = w;
+        if w < dist[cell] {
+            dist[cell] = w;
         }
     }
 
     // Relax through intermediate nodes
-    for k in nodes.iter() {
-        for i in nodes.iter() {
-            let d_ik = dist[&(i.clone(), k.clone())];
+    for k in 0..n {
+        for i in 0..n {
+            let d_ik = dist[i * n + k];
             if d_ik == inf {
                 continue; // skip overflow
             }
-            for j in nodes.iter().cloned() {
-                let d_kj = dist[&(k.clone(), j.clone())];
+            for j in 0..n {
+                let d_kj = dist[k * n + j];
                 if d_kj == inf {
                     continue; // skip overflow
                 }
                 let new_dist = d_ik + d_kj;
-                let entry = dist.get_mut(&(i.clone(), j)).unwrap();
-                if new_dist < *entry {
-                    *entry = new_dist;
+                if new_dist < dist[i * n + j] {
+                    dist[i * n + j] = new_dist;
                 }
             }
         }
     }
 
     // Check for negative cycles (diagonal < 0)
-    for n in nodes.iter().cloned() {
-        if dist[&(n.clone(), n)] < W::default() {
-            return Err(NegativeCycleError);
-        }
+    if (0..n).any(|i| dist[i * n + i] < W::default()) {
+        return Err(NegativeCycleError);
     }
 
     // Collect results, filtering out unreachable pairs (still at infinity)
-    let result = dist.into_iter().filter(|(_, d)| *d != inf).collect();
+    let mut result = PairDistMap::new();
+    for (i, src) in nodes.iter().enumerate() {
+        for (j, dst) in nodes.iter().enumerate() {
+            let d = dist[i * n + j];
+            if d != inf {
+                result.insert((src.clone(), dst.clone()), d);
+            }
+        }
+    }
     Ok(result)
 }
 
@@ -733,10 +738,8 @@ where
                 } else {
                     let spur_cost = dist_map[&self.goal].0;
                     let mut path = vec![self.goal.clone()];
-                    let mut current = self.goal.clone();
-                    while let Some((_, Some(prev))) = dist_map.get(&current).cloned() {
+                    while let Some((_, Some(prev))) = dist_map.get(path.last().unwrap()) {
                         path.push(prev.clone());
-                        current = prev;
                     }
                     path.reverse();
                     Some((spur_cost, path))

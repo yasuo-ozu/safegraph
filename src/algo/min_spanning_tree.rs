@@ -147,15 +147,7 @@ where
         loop {
             // Try to get next MST edge from current component
             while let Some(EdgeCandidate { edge_ix, .. }) = self.heap.pop() {
-                let eps: Vec<G::NodeIx> = unsafe {
-                    <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
-                        self.graph, &edge_ix,
-                    )
-                }
-                .into_iter()
-                .map(|n| n.borrow().clone())
-                .collect();
-                let (a, b) = (eps[0].clone(), eps[1].clone());
+                let (a, b) = unsafe { super::edge_pair(self.graph, &edge_ix) };
 
                 let new_node = if !self.in_mst.contains(&a) {
                     Some(a)
@@ -215,13 +207,14 @@ unsafe fn add_incident_edges<G, W, F>(
 {
     for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, &node) {
         let eix: &G::EdgeIx = eix.borrow();
-        let eps: Vec<G::NodeIx> =
-            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix)
-                .into_iter()
-                .map(|n| n.borrow().clone())
-                .collect();
-        let (a, b) = (eps[0].clone(), eps[1].clone());
-        if (a == node && !in_mst.contains(&b)) || (b == node && !in_mst.contains(&a)) {
+        let mut ends =
+            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix).into_iter();
+        let (a, b) = (
+            ends.next().expect("a binary edge has two endpoints"),
+            ends.next().expect("a binary edge has two endpoints"),
+        );
+        let (a, b): (&G::NodeIx, &G::NodeIx) = (a.borrow(), b.borrow());
+        if (*a == node && !in_mst.contains(b)) || (*b == node && !in_mst.contains(a)) {
             let w = edge_weight(Graph::edge_unchecked(graph, eix));
             heap.push(EdgeCandidate {
                 weight: w,
