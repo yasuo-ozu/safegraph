@@ -377,8 +377,8 @@ where
     // caller-supplied raw indices so the BFS can start from `source` and compare
     // against `target`.
     graph.scope(|ctx| {
-        let source = ctx.wrap_node(source);
-        let target = ctx.wrap_node(target);
+        // SAFETY: the caller guarantees `source` and `target` are valid indices.
+        let (source, target) = unsafe { (ctx.wrap_node(source), ctx.wrap_node(target)) };
         // SAFETY: the caller guarantees `source` is a valid index, so skipping the
         // contains-check in `new_unchecked` is sound.
         unsafe { Bfs::new_unchecked(ctx, source) }.any(|n| n == target)

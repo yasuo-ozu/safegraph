@@ -206,16 +206,24 @@ impl<'scope, G: ?Sized + GraphProperty> Context<'scope, G> {
     ///
     /// This is the controlled entry point for bringing an externally-held index
     /// into a scope (e.g. to seed a traversal from a caller-supplied node). The
-    /// brand only governs escape (the result still cannot outlive the scope); the
-    /// caller is responsible for the index actually belonging to this graph, the
-    /// same as for any index passed to the `*_unchecked` accessors.
-    pub fn wrap_node(&self, node_ix: G::NodeIx) -> NodeIx<'scope, G::NodeIx> {
+    /// brand only governs escape (the result still cannot outlive the scope).
+    ///
+    /// # Safety
+    ///
+    /// `node_ix` must be a valid node index of the wrapped graph. Scoped indices
+    /// are trusted without checks (`contains_node_index` is always `true` on a
+    /// [`Context`]), so an invalid one reaches the unchecked accessors.
+    pub unsafe fn wrap_node(&self, node_ix: G::NodeIx) -> NodeIx<'scope, G::NodeIx> {
         NodeIx(PhantomData, node_ix)
     }
 
     /// Brands a raw edge index as a scoped index — the inverse of
     /// [`EdgeIx::inner`]. See [`wrap_node`](Self::wrap_node).
-    pub fn wrap_edge(&self, edge_ix: G::EdgeIx) -> EdgeIx<'scope, G::EdgeIx> {
+    ///
+    /// # Safety
+    ///
+    /// `edge_ix` must be a valid edge index of the wrapped graph.
+    pub unsafe fn wrap_edge(&self, edge_ix: G::EdgeIx) -> EdgeIx<'scope, G::EdgeIx> {
         EdgeIx(PhantomData, edge_ix)
     }
 }
@@ -434,11 +442,33 @@ impl<'r, 'scope, G: ?Sized> RemovableContext<'r, 'scope, G> {
             (node_indices.size_hint().1, edge_indices.size_hint().1),
             (Some(0), Some(0)) | (Some(0), Some(1)) | (Some(1), Some(0)) | (Some(1), Some(1))
         ) {
+            // `size_hint` is only a hint (safe code may report it wrongly), so
+            // pull one item past the expected count before removing anything.
+            // If either side yields more than one index, fall back to the
+            // validating batch path with every item, the pulled ones included.
+            let first_node_index = node_indices.next();
+            let second_node_index = first_node_index.as_ref().and_then(|_| node_indices.next());
+            let first_edge_index = edge_indices.next();
+            let second_edge_index = first_edge_index.as_ref().and_then(|_| edge_indices.next());
+            if second_node_index.is_some() || second_edge_index.is_some() {
+                return internal(
+                    &mut self,
+                    first_node_index
+                        .into_iter()
+                        .chain(second_node_index)
+                        .chain(node_indices),
+                    first_edge_index
+                        .into_iter()
+                        .chain(second_edge_index)
+                        .chain(edge_indices),
+                );
+            }
+
+            // At most one index on each side: no duplicates are possible, and
+            // removing the edge first leaves the node index untouched.
             let mut nodes_out = IN::default();
             let mut edges_out = IE::default();
-            let first_edge_index = edge_indices.next();
-            let first_node_index = node_indices.next();
-            if let Some(EdgeIx(_, eix)) = first_edge_index.clone() {
+            if let Some(EdgeIx(_, eix)) = first_edge_index {
                 // SAFETY: scoped indices are produced from this context and
                 // stay valid for the scope.
                 let e = unsafe {
@@ -446,7 +476,7 @@ impl<'r, 'scope, G: ?Sized> RemovableContext<'r, 'scope, G> {
                 };
                 edges_out.extend(core::iter::once(e));
             }
-            if let Some(NodeIx(_, nix)) = first_node_index.clone() {
+            if let Some(NodeIx(_, nix)) = first_node_index {
                 // SAFETY: scoped indices are produced from this context and
                 // stay valid for the scope.
                 let n = unsafe {
@@ -454,16 +484,6 @@ impl<'r, 'scope, G: ?Sized> RemovableContext<'r, 'scope, G> {
                 };
                 nodes_out.extend(core::iter::once(n));
             }
-
-            // Most cases, collect() operation and memory allocation for zero-sized iterator is
-            // thrown away during optimization, so the deligated iterator and Vec is not costly.
-            let (nodes_out_internal, edges_out_internal): (Vec<_>, Vec<_>) = internal(
-                &mut self,
-                node_indices.filter(|n| first_node_index.as_ref() != Some(n)),
-                edge_indices.filter(|n| first_edge_index.as_ref() != Some(n)),
-            );
-            nodes_out.extend(nodes_out_internal);
-            edges_out.extend(edges_out_internal);
             (nodes_out, edges_out)
         } else {
             internal(&mut self, node_indices, edge_indices)
