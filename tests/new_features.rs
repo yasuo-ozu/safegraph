@@ -1,8 +1,12 @@
-use safegraph::graph::capability::{Bigraph, UniqueEdge, UniqueNode};
+use safegraph::graph::capability::{
+    Bigraph, Directed, InsertEdge, InsertNode, RemoveNode, StableEdge, StableNode, UniqueEdge,
+    UniqueNode,
+};
 use safegraph::graph::{prelude::*, GraphMap};
 use safegraph::BTreeGraph;
 use safegraph::HashGraph;
 use safegraph::VecGraph;
+use std::borrow::Borrow;
 
 // ---------------------------------------------------------------------------
 // endpoints_from_array round-trip
@@ -207,9 +211,9 @@ fn extend_graph_preserves_edge_connectivity() {
 
     // Each edge in g1 should have valid endpoints
     for eix in g1.edge_indices() {
-        let ep = g1.endpoints(eix);
+        let ep = g1.endpoints(*eix);
         for nix in ep {
-            assert!(g1.contains_node_index(nix));
+            assert!(g1.contains_node_index(&nix));
         }
     }
 }
@@ -253,9 +257,9 @@ fn hashgraph_insert_nodes_and_edges() {
     let n2 = g.insert_node(3).unwrap();
 
     assert_eq!(g.len_node(), 3);
-    assert!(g.contains_node_index(n0));
-    assert!(g.contains_node_index(n1));
-    assert!(g.contains_node_index(n2));
+    assert!(g.contains_node_index(&n0));
+    assert!(g.contains_node_index(&n1));
+    assert!(g.contains_node_index(&n2));
 
     let e0 = g.insert_edge(10, [n0, n1]).unwrap();
     let e1 = g.insert_edge(20, [n1, n2]).unwrap();
@@ -317,7 +321,7 @@ fn hashgraph_remove_node_cascades_edges() {
 
     g.remove_node(2);
 
-    assert!(!g.contains_node_index(2));
+    assert!(!g.contains_node_index(&2));
     assert_eq!(g.len_node(), 2);
     assert_eq!(g.len_edge(), 0);
 }
@@ -395,8 +399,8 @@ fn hashgraph_map_transform() {
     g.insert_edge(10, [1, 2]).unwrap();
 
     let g2 = g.map(|n| n * 10, |e| e * 10);
-    assert!(g2.contains_node_index(10));
-    assert!(g2.contains_node_index(20));
+    assert!(g2.contains_node_index(&10));
+    assert!(g2.contains_node_index(&20));
     assert!(g2.contains_edge_index(100));
 }
 
@@ -439,4 +443,79 @@ fn hashgraph_incoming_edges() {
 
     let incoming: Vec<_> = g.edges_to(2).collect();
     assert_eq!(incoming.len(), 2);
+}
+
+/// Map-backed graphs accept non-`Copy` keys: `NodeIx`/`EdgeIx` only need `Clone`.
+fn check_string_keys<G>()
+where
+    G: Default + Graph<Node = String, Edge = String, NodeIx = String, EdgeIx = String>,
+    G: InsertNode + InsertEdge + RemoveNode + Bigraph + StableNode + StableEdge,
+    G: for<'r> Directed<'r>,
+    G: GraphProperty<Endpoints = [String; 2]>,
+{
+    let s = |v: &str| v.to_string();
+    let mut g = G::default();
+    for n in ["a", "b", "c", "d"] {
+        g.insert_node(s(n)).unwrap();
+    }
+    assert!(g.insert_node(s("a")).is_err(), "node keys are unique");
+    g.insert_edge(s("ab"), [s("a"), s("b")]).unwrap();
+    g.insert_edge(s("bc"), [s("b"), s("c")]).unwrap();
+    g.insert_edge(s("cd"), [s("c"), s("d")]).unwrap();
+    g.insert_edge(s("da"), [s("d"), s("a")]).unwrap();
+
+    assert_eq!(g.edge_tail_index(s("bc")), "b");
+    assert_eq!(g.edge_head_index(s("bc")), "c");
+    let from_b: Vec<String> = g.edge_indices_from(s("b")).collect();
+    assert_eq!(from_b, ["bc"]);
+    assert!(safegraph::algo::connectivity::has_path_connecting(
+        &g,
+        s("a"),
+        s("d")
+    ));
+
+    // Batched removal: node "a" cascades "ab" and "da"; "bc" is explicit.
+    g.remove_nodes_edges([s("a")], [s("bc")]);
+    let mut nodes: Vec<String> = Graph::node_indices(&g)
+        .map(|n| n.borrow().clone())
+        .collect();
+    nodes.sort();
+    assert_eq!(nodes, ["b", "c", "d"]);
+    let edges: Vec<String> = Graph::edge_indices(&g)
+        .map(|e| e.borrow().clone())
+        .collect();
+    assert_eq!(edges, ["cd"]);
+    assert!(!safegraph::algo::connectivity::has_path_connecting(
+        &g,
+        s("b"),
+        s("d")
+    ));
+}
+
+#[test]
+fn hashgraph_string_keys() {
+    check_string_keys::<HashGraph<String, String>>();
+}
+
+#[test]
+fn btreegraph_string_keys() {
+    check_string_keys::<BTreeGraph<String, String>>();
+}
+
+#[test]
+#[should_panic(expected = "duplicate node index")]
+fn remove_nodes_edges_rejects_duplicate_nodes() {
+    let mut g = BTreeGraph::<u32, u32>::new();
+    g.insert_node(1).unwrap();
+    g.remove_nodes_edges([1, 1], std::iter::empty());
+}
+
+#[test]
+#[should_panic(expected = "duplicate edge index")]
+fn remove_nodes_edges_rejects_duplicate_edges() {
+    let mut g = BTreeGraph::<u32, u32>::new();
+    g.insert_node(1).unwrap();
+    g.insert_node(2).unwrap();
+    g.insert_edge(10, [1, 2]).unwrap();
+    g.remove_nodes_edges(std::iter::empty(), [10, 10]);
 }

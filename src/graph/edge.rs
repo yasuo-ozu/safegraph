@@ -15,7 +15,8 @@
 
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
-use std::hash::Hash;
+
+use crate::collection::IndexKey;
 
 /// A collection of node indices that form an edge's endpoints.
 ///
@@ -29,7 +30,7 @@ use std::hash::Hash;
 /// [`Graph::insert_edge`](super::Graph::insert_edge).
 pub trait Endpoints: Clone + IntoIterator<Item = Self::NodeIx> + Eq + Debug {
     /// The node index type stored in this endpoint collection.
-    type NodeIx: Copy + Eq + Ord + Hash + Display + Debug;
+    type NodeIx: IndexKey + Display + Debug;
 
     /// Returns an iterator over the contained node indices.
     fn iter(&self) -> Self::IntoIter {
@@ -72,7 +73,7 @@ pub trait Map<BaseNodeIx>: Endpoints {
     fn map_backward(mapped: Self::Mapped, f: impl FnMut(BaseNodeIx) -> Self::NodeIx) -> Self;
 }
 
-impl<Nx: Copy + Eq + Ord + Hash + Display + Debug> Endpoints for [Nx; 2] {
+impl<Nx: IndexKey + Display + Debug> Endpoints for [Nx; 2] {
     type NodeIx = Nx;
 
     fn try_from_node_indices(nodes: impl IntoIterator<Item = Self::NodeIx>) -> Option<Self> {
@@ -102,20 +103,20 @@ impl<Nx: Copy + Eq + Ord + Hash + Display + Debug> Endpoints for [Nx; 2] {
 
 impl<Nx, NewNx> Map<NewNx> for [Nx; 2]
 where
-    Nx: Copy + Eq + Ord + Hash + Display + Debug,
-    NewNx: Copy + Eq + Ord + Hash + Display + Debug,
+    Nx: IndexKey + Display + Debug,
+    NewNx: IndexKey + Display + Debug,
 {
     type Mapped = [NewNx; 2];
-    fn map_forward(self, mut f: impl FnMut(Nx) -> NewNx) -> [NewNx; 2] {
-        [f(self[0]), f(self[1])]
+    fn map_forward(self, f: impl FnMut(Nx) -> NewNx) -> [NewNx; 2] {
+        self.map(f)
     }
 
-    fn map_backward(mapped: Self::Mapped, mut f: impl FnMut(NewNx) -> Self::NodeIx) -> Self {
-        [f(mapped[0]), f(mapped[1])]
+    fn map_backward(mapped: Self::Mapped, f: impl FnMut(NewNx) -> Self::NodeIx) -> Self {
+        mapped.map(f)
     }
 }
 
-impl<Nx: Copy + Eq + Ord + Hash + Display + Debug> Endpoints for HashSet<Nx> {
+impl<Nx: IndexKey + Display + Debug> Endpoints for HashSet<Nx> {
     type NodeIx = Nx;
 
     fn try_from_node_indices(nodes: impl IntoIterator<Item = Self::NodeIx>) -> Option<Self> {
@@ -132,8 +133,8 @@ impl<Nx: Copy + Eq + Ord + Hash + Display + Debug> Endpoints for HashSet<Nx> {
 
 impl<Nx, NewNx> Map<NewNx> for HashSet<Nx>
 where
-    Nx: Copy + Eq + Ord + Hash + Display + Debug,
-    NewNx: Copy + Eq + Ord + Hash + Display + Debug,
+    Nx: IndexKey + Display + Debug,
+    NewNx: IndexKey + Display + Debug,
 {
     type Mapped = HashSet<NewNx>;
     fn map_forward(self, f: impl FnMut(Nx) -> NewNx) -> HashSet<NewNx> {
@@ -145,7 +146,7 @@ where
     }
 }
 
-impl<Nx: Copy + Eq + Ord + Hash + Display + Debug> Endpoints for BTreeSet<Nx> {
+impl<Nx: IndexKey + Display + Debug> Endpoints for BTreeSet<Nx> {
     type NodeIx = Nx;
 
     fn try_from_node_indices(nodes: impl IntoIterator<Item = Self::NodeIx>) -> Option<Self> {
@@ -162,8 +163,8 @@ impl<Nx: Copy + Eq + Ord + Hash + Display + Debug> Endpoints for BTreeSet<Nx> {
 
 impl<Nx, NewNx> Map<NewNx> for BTreeSet<Nx>
 where
-    Nx: Copy + Eq + Ord + Hash + Display + Debug,
-    NewNx: Copy + Eq + Ord + Hash + Display + Debug,
+    Nx: IndexKey + Display + Debug,
+    NewNx: IndexKey + Display + Debug,
 {
     type Mapped = BTreeSet<NewNx>;
     fn map_forward(self, f: impl FnMut(Nx) -> NewNx) -> BTreeSet<NewNx> {
@@ -175,7 +176,7 @@ where
     }
 }
 
-impl<Nx: Copy + Eq + Ord + Hash + Display + Debug> Endpoints for Vec<Nx> {
+impl<Nx: IndexKey + Display + Debug> Endpoints for Vec<Nx> {
     type NodeIx = Nx;
 
     fn try_from_node_indices(nodes: impl IntoIterator<Item = Nx>) -> Option<Self> {

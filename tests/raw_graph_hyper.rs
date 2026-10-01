@@ -32,32 +32,39 @@ where
             let c = ctx.insert_node(30).expect("insert c");
             let d = ctx.insert_node(40).expect("insert d");
 
-            let ep_e0 = <_ as Endpoints>::try_from_node_indices([a, b, c]).expect("ep_e0");
-            let ep_e1 = <_ as Endpoints>::try_from_node_indices([b, d]).expect("ep_e1");
+            let ep_e0 = <_ as Endpoints>::try_from_node_indices([a.clone(), b.clone(), c.clone()])
+                .expect("ep_e0");
+            let ep_e1 =
+                <_ as Endpoints>::try_from_node_indices([b.clone(), d.clone()]).expect("ep_e1");
             let e0 = ctx.insert_edge(100, ep_e0).expect("insert e0");
             let e1 = ctx.insert_edge(200, ep_e1).expect("insert e1");
 
             // Counts and individual lookups.
             assert_eq!(ctx.nodes().count(), 4);
             assert_eq!(ctx.edges().count(), 2);
-            assert_eq!(*ctx.node(a), 10);
-            assert_eq!(*ctx.node(d), 40);
-            assert_eq!(*ctx.edge(e0), 100);
-            assert_eq!(*ctx.edge(e1), 200);
+            assert_eq!(*ctx.node(a.clone()), 10);
+            assert_eq!(*ctx.node(d.clone()), 40);
+            assert_eq!(*ctx.edge(e0.clone()), 100);
+            assert_eq!(*ctx.edge(e1.clone()), 200);
 
             // Endpoints come back as a set: order is not meaningful.
-            let ep0: BTreeSet<_> = ctx.endpoints(e0).into_iter().collect();
-            let want_e0: BTreeSet<_> = [a, b, c].into_iter().collect();
+            let ep0: BTreeSet<_> = ctx.endpoints(e0.clone()).into_iter().collect();
+            let want_e0: BTreeSet<_> = [a.clone(), b.clone(), c.clone()].into_iter().collect();
             assert_eq!(ep0, want_e0);
-            let ep1: BTreeSet<_> = ctx.endpoints(e1).into_iter().collect();
-            let want_e1: BTreeSet<_> = [b, d].into_iter().collect();
+            let ep1: BTreeSet<_> = ctx.endpoints(e1.clone()).into_iter().collect();
+            let want_e1: BTreeSet<_> = [b.clone(), d.clone()].into_iter().collect();
             assert_eq!(ep1, want_e1);
 
             // `edge_indices_from` lists incident edges (each yielded once).
-            let from_a: BTreeSet<_> = ctx.edge_indices_from(a).collect();
-            assert_eq!(from_a, [e0].into_iter().collect::<BTreeSet<_>>());
-            let from_b: BTreeSet<_> = ctx.edge_indices_from(b).collect();
-            assert_eq!(from_b, [e0, e1].into_iter().collect::<BTreeSet<_>>());
+            let from_a: BTreeSet<_> = ctx.edge_indices_from(a.clone()).collect();
+            assert_eq!(from_a, [e0.clone()].into_iter().collect::<BTreeSet<_>>());
+            let from_b: BTreeSet<_> = ctx.edge_indices_from(b.clone()).collect();
+            assert_eq!(
+                from_b,
+                [e0.clone(), e1.clone()]
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+            );
             let from_d: BTreeSet<_> = ctx.edge_indices_from(d).collect();
             assert_eq!(from_d, [e1].into_iter().collect::<BTreeSet<_>>());
 
@@ -72,7 +79,7 @@ where
             for (eix, _) in &walks_a {
                 assert_eq!(*eix, e0);
             }
-            let neighbors: BTreeSet<_> = walks_a.iter().map(|(_, nix)| *nix).collect();
+            let neighbors: BTreeSet<_> = walks_a.iter().map(|(_, nix)| nix.clone()).collect();
             assert_eq!(neighbors, [b, c].into_iter().collect::<BTreeSet<_>>());
         });
     }
@@ -86,7 +93,7 @@ where
             let b = ctx.insert_node(20).unwrap();
             let c = ctx.insert_node(30).unwrap();
             let d = ctx.insert_node(40).unwrap();
-            let ep_e0 = <_ as Endpoints>::try_from_node_indices([a, b, c]).unwrap();
+            let ep_e0 = <_ as Endpoints>::try_from_node_indices([a, b.clone(), c]).unwrap();
             let ep_e1 = <_ as Endpoints>::try_from_node_indices([b, d]).unwrap();
             let e0 = ctx.insert_edge(100, ep_e0).unwrap();
             let _e1 = ctx.insert_edge(200, ep_e1).unwrap();
@@ -105,8 +112,8 @@ where
             let b = ctx.insert_node(20).unwrap();
             let c = ctx.insert_node(30).unwrap();
             let d = ctx.insert_node(40).unwrap();
-            let ep_e0 = <_ as Endpoints>::try_from_node_indices([a, b, c]).unwrap();
-            let ep_e1 = <_ as Endpoints>::try_from_node_indices([b, d]).unwrap();
+            let ep_e0 = <_ as Endpoints>::try_from_node_indices([a, b.clone(), c]).unwrap();
+            let ep_e1 = <_ as Endpoints>::try_from_node_indices([b.clone(), d]).unwrap();
             let _e0 = ctx.insert_edge(100, ep_e0).unwrap();
             let _e1 = ctx.insert_edge(200, ep_e1).unwrap();
             ctx.remove_nodes_edges(Some(b), None);

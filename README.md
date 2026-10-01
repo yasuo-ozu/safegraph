@@ -82,11 +82,11 @@ safegraph::graph!(
     n0 {(0, 1)} -- {(0, 10)} --> n1 {(0, 2)},
 );
 g.remove_node(n0);
-assert!(!g.contains_node_index(n0));
-assert!(g.contains_node_index(n1));
+assert!(!g.contains_node_index(&n0));
+assert!(g.contains_node_index(&n1));
 
 let n2 = g.insert_node((0, 3)).unwrap();
-assert!(g.contains_node_index(n2));
+assert!(g.contains_node_index(&n2));
 ```
 
 ### `graph!` Macro
@@ -157,7 +157,7 @@ use safegraph::VecGraph;
 let mut g = VecGraph::<u32, u32>::default();
 let n = unsafe { g.insert_node_unchecked(1).unwrap() };
 g.remove_node(n);
-assert!(!g.contains_node_index(n)); // old index is invalid
+assert!(!g.contains_node_index(&n)); // old index is invalid
 g.push(2); // insert another node
 assert_eq!(g.node(n), &2); // refering another node
 ```
@@ -171,10 +171,10 @@ use safegraph::VecGraph;
 let mut g = VecGraph::<u32, u32>::default().stabilize();
 let n = g.insert_node(1).unwrap();
 g.remove_node(n);
-assert!(!g.contains_node_index(n)); // removed generation is invalid
+assert!(!g.contains_node_index(&n)); // removed generation is invalid
 
 let n2 = g.insert_node(2).unwrap();
-assert!(g.contains_node_index(n2));
+assert!(g.contains_node_index(&n2));
 assert_eq!(*g.node(n2), 2); // new generation points to new payload
 ```
 

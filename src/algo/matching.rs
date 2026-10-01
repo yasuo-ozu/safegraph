@@ -99,19 +99,18 @@ pub struct GreedyMatching<'r, G: ?Sized, E, N> {
 /// Returns an iterator over edges forming a greedy maximal matching.
 pub fn greedy_matching<'r, G>(
     graph: &'r G,
-) -> GreedyMatching<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices, G::NodeIx>
+) -> GreedyMatching<'r, G, super::OwnedEdgeIndices<'r, G>, G::NodeIx>
 where
     G: Graph + Bigraph + StableEdge + ?Sized,
 {
     GreedyMatching {
         graph,
-        edges: <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph),
+        edges: super::owned_edge_indices(graph),
         matched_nodes: HashSet::new(),
     }
 }
 
-impl<'r, G> Iterator
-    for GreedyMatching<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices, G::NodeIx>
+impl<'r, G> Iterator for GreedyMatching<'r, G, super::OwnedEdgeIndices<'r, G>, G::NodeIx>
 where
     G: Graph + Bigraph + StableEdge + ?Sized,
 {
@@ -121,11 +120,14 @@ where
         loop {
             let eix = self.edges.next()?;
             let eps: Vec<G::NodeIx> = unsafe {
-                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix)
+                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
+                    self.graph,
+                    eix.clone(),
+                )
             }
             .into_iter()
             .collect();
-            let (a, b) = (eps[0], eps[1]);
+            let (a, b) = (eps[0].clone(), eps[1].clone());
 
             // Skip self-loops
             if a == b {
@@ -155,16 +157,19 @@ where
     // Build adjacency: for each node, list of (edge_ix, other_node)
     let mut adj: Adjacency<G> = HashMap::new();
 
-    for eix in <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph) {
-        let eps: Vec<G::NodeIx> =
-            unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix) }
-                .into_iter()
-                .collect();
-        let (a, b) = (eps[0], eps[1]);
+    for eix in super::owned_edge_indices(graph) {
+        let eps: Vec<G::NodeIx> = unsafe {
+            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix.clone())
+        }
+        .into_iter()
+        .collect();
+        let (a, b) = (eps[0].clone(), eps[1].clone());
         if a == b {
             continue; // Skip self-loops
         }
-        adj.entry(a).or_default().push((eix, b));
+        adj.entry(a.clone())
+            .or_default()
+            .push((eix.clone(), b.clone()));
         adj.entry(b).or_default().push((eix, a));
     }
 
@@ -172,28 +177,28 @@ where
     let mut match_of: HashMap<G::NodeIx, (G::EdgeIx, G::NodeIx)> = HashMap::new();
     let mut in_matching: HashSet<G::EdgeIx> = HashSet::new();
 
-    for eix in <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph) {
-        let eps: Vec<G::NodeIx> =
-            unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix) }
-                .into_iter()
-                .collect();
-        let (a, b) = (eps[0], eps[1]);
+    for eix in super::owned_edge_indices(graph) {
+        let eps: Vec<G::NodeIx> = unsafe {
+            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix.clone())
+        }
+        .into_iter()
+        .collect();
+        let (a, b) = (eps[0].clone(), eps[1].clone());
         if a == b {
             continue;
         }
         if !match_of.contains_key(&a) && !match_of.contains_key(&b) {
-            match_of.insert(a, (eix, b));
-            match_of.insert(b, (eix, a));
+            match_of.insert(a.clone(), (eix.clone(), b.clone()));
+            match_of.insert(b, (eix.clone(), a));
             in_matching.insert(eix);
         }
     }
 
     // Augment: find augmenting paths from free (unmatched) nodes
     loop {
-        let free_nodes: Vec<G::NodeIx> =
-            <_ as crate::graph::GraphOperation<'_>>::node_indices(graph)
-                .filter(|n| !match_of.contains_key(n))
-                .collect();
+        let free_nodes: Vec<G::NodeIx> = super::owned_node_indices(graph)
+            .filter(|n| !match_of.contains_key(n))
+            .collect();
 
         let mut found_augmenting = false;
 
@@ -205,7 +210,7 @@ where
                 continue; // May have been matched during this round
             }
 
-            if let Some(path) = find_augmenting_path(*free, &adj, &match_of, &in_matching) {
+            if let Some(path) = find_augmenting_path(free.clone(), &adj, &match_of, &in_matching) {
                 // Augment along the path: toggle edges in/out of matching
                 for (eix, in_match) in path {
                     if in_match {
@@ -216,14 +221,17 @@ where
                 }
                 // Rebuild match_of from in_matching
                 match_of.clear();
-                for &eix in &in_matching {
+                for eix in in_matching.iter().cloned() {
                     let eps: Vec<G::NodeIx> = unsafe {
-                        <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix)
+                        <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
+                            graph,
+                            eix.clone(),
+                        )
                     }
                     .into_iter()
                     .collect();
-                    let (a, b) = (eps[0], eps[1]);
-                    match_of.insert(a, (eix, b));
+                    let (a, b) = (eps[0].clone(), eps[1].clone());
+                    match_of.insert(a.clone(), (eix.clone(), b.clone()));
                     match_of.insert(b, (eix, a));
                 }
                 found_augmenting = true;
@@ -247,13 +255,13 @@ fn find_augmenting_path<N, E>(
     in_matching: &HashSet<E>,
 ) -> Option<Vec<(E, bool)>>
 where
-    N: Copy + Eq + std::hash::Hash,
-    E: Copy + Eq + std::hash::Hash,
+    N: Clone + Eq + std::hash::Hash,
+    E: Clone + Eq + std::hash::Hash,
 {
     // DFS with backtracking
     // State: (current_node, must_use_unmatched_next, visited, path)
     let mut visited: HashSet<N> = HashSet::new();
-    visited.insert(start);
+    visited.insert(start.clone());
 
     struct Frame<N> {
         node: N,
@@ -289,7 +297,7 @@ where
             continue;
         }
 
-        let (eix, neighbor) = neighbors[frame.neighbors_idx];
+        let (eix, neighbor) = neighbors[frame.neighbors_idx].clone();
         let edge_in_matching = in_matching.contains(&eix);
 
         // We alternate: unmatched -> matched -> unmatched -> ...
@@ -308,7 +316,7 @@ where
 
         // Take this edge
         path.push((eix, edge_in_matching));
-        visited.insert(neighbor);
+        visited.insert(neighbor.clone());
 
         // If we used an unmatched edge and neighbor is free, we found an augmenting path
         if !edge_in_matching && !match_of.contains_key(&neighbor) {

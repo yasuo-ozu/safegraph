@@ -5,6 +5,8 @@
 //! been tombstoned (soft-deleted). On insert, tombstoned slots may be reused
 //! for nodes; edges are always appended.
 
+use crate::collection::IndexKey;
+use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
@@ -44,7 +46,7 @@ where
             // is valid for lookup/comparison; `0` would be rejected by
             // `contains_node_index`. SAFETY: `nix` came from the inner graph's
             // own walk iterator, so it is a valid node index.
-            let nver = version_of(unsafe { self.graph.node_unchecked(nix) });
+            let nver = version_of(unsafe { self.graph.node_unchecked(&nix) });
             // SAFETY: `edge_ptr` points to a live `EdgeIx<E>` for `'r`, so its
             // `inner: E` field address is valid for `'r`.
             let inner_ptr: *const E = unsafe { core::ptr::addr_of!((*edge_ptr).inner) };
@@ -131,7 +133,7 @@ where
             }
             // SAFETY: `nix` came from the inner graph's own walk iterator; look up
             // its live version so the yielded index is valid (see `Walks`).
-            let nver = version_of(unsafe { self.graph.node_unchecked(nix) });
+            let nver = version_of(unsafe { self.graph.node_unchecked(&nix) });
             // SAFETY: project to the `inner: E` field; valid for `'r`.
             let inner_ptr: *const E = unsafe { core::ptr::addr_of!((*edge_ptr).inner) };
             return Some(unsafe {
@@ -162,19 +164,21 @@ where
     G: 'r + GraphOperation<'r, Node = NodeIx<N>, Edge = EdgeIx<E>>,
     N: 'r,
     E: 'r,
-    I: Iterator<Item = G::NodeIx>,
+    I: Iterator,
+    I::Item: Borrow<G::NodeIx>,
 {
     type Item = NodeIx<G::NodeIx>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let inner_ix = self.inner.next()?;
+            let inner_ix = inner_ix.borrow();
             // SAFETY: index comes from a graph-derived iterator.
             let ver = unsafe { self.graph.node_unchecked(inner_ix) }.version;
             if ver > 0 {
                 return Some(NodeIx {
                     version: ver,
-                    inner: inner_ix,
+                    inner: inner_ix.clone(),
                 });
             }
         }
@@ -192,19 +196,21 @@ where
     G: 'r + GraphOperation<'r, Node = NodeIx<N>, Edge = EdgeIx<E>>,
     N: 'r,
     E: 'r,
-    I: Iterator<Item = G::EdgeIx>,
+    I: Iterator,
+    I::Item: Borrow<G::EdgeIx>,
 {
     type Item = EdgeIx<G::EdgeIx>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let inner_eix = self.inner.next()?;
+            let inner_eix = inner_eix.borrow();
             // SAFETY: index comes from a graph-derived iterator.
             let ver = unsafe { version_of(self.graph.edge_unchecked(inner_eix)) };
             if ver > 0 {
                 return Some(EdgeIx {
                     version: ver,
-                    inner: inner_eix,
+                    inner: inner_eix.clone(),
                 });
             }
         }
@@ -263,16 +269,20 @@ where
         // read borrows end first; node indices are unaffected by edge removal, so
         // both lists stay valid for their respective pass.
         let dead_edges: Vec<G::EdgeIx> = <G as GraphOperation<'_>>::edge_indices(&self.inner)
-            .filter(|&ix| {
-                version_of(unsafe { <G as GraphOperation<'_>>::edge_unchecked(&self.inner, ix) })
-                    <= 0
+            .filter(|ix| {
+                version_of(unsafe {
+                    <G as GraphOperation<'_>>::edge_unchecked(&self.inner, ix.borrow())
+                }) <= 0
             })
+            .map(|ix| ix.borrow().clone())
             .collect();
         let dead_nodes: Vec<G::NodeIx> = <G as GraphOperation<'_>>::node_indices(&self.inner)
-            .filter(|&ix| {
-                version_of(unsafe { <G as GraphOperation<'_>>::node_unchecked(&self.inner, ix) })
-                    <= 0
+            .filter(|ix| {
+                version_of(unsafe {
+                    <G as GraphOperation<'_>>::node_unchecked(&self.inner, ix.borrow())
+                }) <= 0
             })
+            .map(|ix| ix.borrow().clone())
             .collect();
 
         // Edges first (no cascade); afterwards every tombstoned node is
@@ -305,6 +315,9 @@ pub struct NodeIx<Ix> {
     pub(crate) inner: Ix,
 }
 
+// SAFETY: the derived impls are field-wise, and `i64` and `Ix` uphold the contract.
+unsafe impl<Ix: IndexKey> IndexKey for NodeIx<Ix> {}
+
 impl<Ix: Display> Display for NodeIx<Ix> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "v{}:{}", self.version, self.inner)
@@ -316,6 +329,9 @@ pub struct EdgeIx<Ix> {
     pub(crate) version: i64,
     pub(crate) inner: Ix,
 }
+
+// SAFETY: as for `NodeIx`.
+unsafe impl<Ix: IndexKey> IndexKey for EdgeIx<Ix> {}
 
 impl<Ix: Display> Display for EdgeIx<Ix> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -349,20 +365,20 @@ where
     G: GraphOperation<'r, Node = NodeIx<N>, Edge = EdgeIx<E>>,
     G::Endpoints: Map<NodeIx<G::NodeIx>>,
 {
-    fn contains_node_index(&self, ix: Self::NodeIx) -> bool {
-        if ix.version <= 0 || !self.inner.contains_node_index(ix.inner) {
+    fn contains_node_index(&self, ix: &Self::NodeIx) -> bool {
+        if ix.version <= 0 || !self.inner.contains_node_index(&ix.inner) {
             return false;
         }
         // SAFETY: we checked contains_node_index above.
-        let ver = unsafe { version_of(self.inner.node_unchecked(ix.inner)) };
+        let ver = unsafe { version_of(self.inner.node_unchecked(&ix.inner)) };
         ver == ix.version
     }
 
     fn contains_edge_index(&self, ix: Self::EdgeIx) -> bool {
-        if ix.version <= 0 || !self.inner.contains_edge_index(ix.inner) {
+        if ix.version <= 0 || !self.inner.contains_edge_index(ix.inner.clone()) {
             return false;
         }
-        let ver = unsafe { version_of(self.inner.edge_unchecked(ix.inner)) };
+        let ver = unsafe { version_of(self.inner.edge_unchecked(&ix.inner)) };
         ver == ix.version
     }
 
@@ -382,7 +398,9 @@ where
         self.inner.capacity_edge()
     }
 
+    type NodeIxRef = Self::NodeIx;
     type NodeIndices = NodeIndices<'r, N, E, G, G::NodeIndices>;
+    type EdgeIxRef = Self::EdgeIx;
     type EdgeIndices = EdgeIndices<'r, N, E, G, G::EdgeIndices>;
 
     fn node_indices(&'r self) -> Self::NodeIndices {
@@ -401,18 +419,18 @@ where
         }
     }
 
-    unsafe fn node_unchecked(&self, ix: Self::NodeIx) -> &Self::Node {
-        &self.inner.node_unchecked(ix.inner).inner
+    unsafe fn node_unchecked(&self, ix: &Self::NodeIx) -> &Self::Node {
+        &self.inner.node_unchecked(&ix.inner).inner
     }
 
-    unsafe fn edge_unchecked(&self, ix: Self::EdgeIx) -> &Self::Edge {
-        &self.inner.edge_unchecked(ix.inner).inner
+    unsafe fn edge_unchecked(&self, ix: &Self::EdgeIx) -> &Self::Edge {
+        &self.inner.edge_unchecked(&ix.inner).inner
     }
 
     unsafe fn endpoints_unchecked(&self, ix: Self::EdgeIx) -> Self::Endpoints {
         <G as GraphOperation<'_>>::endpoints_unchecked(&self.inner, ix.inner).map_forward(|nix| {
             NodeIx {
-                version: version_of(unsafe { self.inner.node_unchecked(nix) }),
+                version: version_of(unsafe { self.inner.node_unchecked(&nix) }),
                 inner: nix,
             }
         })
@@ -420,10 +438,10 @@ where
 
     type EdgeIndicesFrom = EdgeIndices<'r, N, E, G, G::EdgeIndicesFrom>;
 
-    unsafe fn edge_indices_from_unchecked(&'r self, ix: Self::NodeIx) -> Self::EdgeIndicesFrom {
+    unsafe fn edge_indices_from_unchecked(&'r self, ix: &Self::NodeIx) -> Self::EdgeIndicesFrom {
         EdgeIndices {
             graph: &self.inner,
-            inner: self.inner.edge_indices_from_unchecked(ix.inner),
+            inner: self.inner.edge_indices_from_unchecked(&ix.inner),
             _marker: PhantomData,
         }
     }
@@ -551,7 +569,7 @@ where
     fn endpoints_as_array(endpoints: Self::Endpoints) -> [Self::NodeIx; 2] {
         let mut versions = std::collections::HashMap::new();
         let raw = <G::Endpoints as Map<NodeIx<G::NodeIx>>>::map_backward(endpoints, |nix| {
-            versions.insert(nix.inner, nix.version);
+            versions.insert(nix.inner.clone(), nix.version);
             nix.inner
         });
         <[G::NodeIx; 2] as Map<NodeIx<G::NodeIx>>>::map_forward(
@@ -566,7 +584,7 @@ where
     fn endpoints_from_array(nodes: [Self::NodeIx; 2]) -> Self::Endpoints {
         let mut versions = std::collections::HashMap::new();
         let raw = <[G::NodeIx; 2] as Map<NodeIx<G::NodeIx>>>::map_backward(nodes, |nix| {
-            versions.insert(nix.inner, nix.version);
+            versions.insert(nix.inner.clone(), nix.version);
             nix.inner
         });
         <G::Endpoints as Map<NodeIx<G::NodeIx>>>::map_forward(
@@ -658,10 +676,18 @@ where
             // Scan for a tombstoned slot to reuse.
             let tombstone = {
                 <G as GraphOperation<'_>>::node_indices(&self.inner)
-                    .find(|&ix| Graph::node_unchecked(&self.inner, ix).version < 0)
+                    .find(|ix| {
+                        unsafe {
+                            <G as GraphOperation<'_>>::node_unchecked(&self.inner, ix.borrow())
+                        }
+                        .version
+                            < 0
+                    })
+                    .map(|ix| ix.borrow().clone())
             };
             if let Some(inner_ix) = tombstone {
-                let entry = <G as UpdateNode<'_>>::node_unchecked_mut(&mut self.inner, inner_ix);
+                let entry =
+                    <G as UpdateNode<'_>>::node_unchecked_mut(&mut self.inner, inner_ix.clone());
                 let new_version = (-entry.version) + 1;
                 *entry = NodeIx {
                     version: new_version,
@@ -722,14 +748,22 @@ where
             // endpoints (`Endpoints: Eq`). Generic `Graph` API does not provide
             // endpoint-rewire mutation.
             let tombstone = {
-                <G as GraphOperation<'_>>::edge_indices(&self.inner).find(|&ix| {
-                    Graph::edge_unchecked(&self.inner, ix).version < 0
-                        && <G as GraphOperation<'_>>::endpoints_unchecked(&self.inner, ix)
-                            == inner_endpoints
-                })
+                <G as GraphOperation<'_>>::edge_indices(&self.inner)
+                    .find(|ix| {
+                        let ix = ix.borrow();
+                        unsafe { <G as GraphOperation<'_>>::edge_unchecked(&self.inner, ix) }
+                            .version
+                            < 0
+                            && <G as GraphOperation<'_>>::endpoints_unchecked(
+                                &self.inner,
+                                ix.clone(),
+                            ) == inner_endpoints
+                    })
+                    .map(|ix| ix.borrow().clone())
             };
             if let Some(inner_ix) = tombstone {
-                let entry = <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, inner_ix);
+                let entry =
+                    <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, inner_ix.clone());
                 let new_version = (-entry.version) + 1;
                 *entry = EdgeIx {
                     version: new_version,
@@ -768,7 +802,7 @@ where
     G::Endpoints: Map<NodeIx<G::NodeIx>>,
 {
     unsafe fn take_edge_unchecked(&mut self, ix: Self::EdgeIx) -> Self::Edge {
-        let edge = unsafe { self.inner.edge_unchecked(ix.inner).inner.clone() };
+        let edge = unsafe { self.inner.edge_unchecked(&ix.inner).inner.clone() };
         <Self as RemoveEdge>::remove_edge_unchecked(self, ix);
         edge
     }
@@ -787,14 +821,19 @@ where
     G::Endpoints: Map<NodeIx<G::NodeIx>>,
 {
     unsafe fn take_node_unchecked(&mut self, ix: Self::NodeIx) -> Self::Node {
-        let node = unsafe { Graph::node_unchecked(&self.inner, ix.inner).inner.clone() };
+        let node = unsafe {
+            Graph::node_unchecked(&self.inner, ix.inner.clone())
+                .inner
+                .clone()
+        };
         <Self as RemoveNode>::remove_node_unchecked(self, ix);
         node
     }
 
     unsafe fn remove_node_unchecked(&mut self, ix: Self::NodeIx) {
         let incident_edges: Vec<G::EdgeIx> = {
-            <G as GraphOperation<'_>>::edge_indices_of_unchecked(&self.inner, ix.inner).collect()
+            <G as GraphOperation<'_>>::edge_indices_of_unchecked(&self.inner, ix.inner.clone())
+                .collect()
         };
         for inner_eix in incident_edges {
             let edge_entry = <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, inner_eix);
@@ -865,7 +904,7 @@ mod tests {
 
         let removed_edges = vec![edges[1], edges[2], removed_edge_explicit];
         for n in &removed_nodes {
-            assert!(!Graph::contains_node_index(&g, *n));
+            assert!(!Graph::contains_node_index(&g, n));
         }
         for e in &removed_edges {
             assert!(!Graph::contains_edge_index(&g, *e));
@@ -883,14 +922,14 @@ mod tests {
         }
 
         for n in &removed_nodes {
-            assert!(!Graph::contains_node_index(&g, *n));
+            assert!(!Graph::contains_node_index(&g, n));
         }
         for e in &removed_edges {
             assert!(!Graph::contains_edge_index(&g, *e));
         }
 
         for (value, n) in &new_nodes {
-            assert!(Graph::contains_node_index(&g, *n));
+            assert!(Graph::contains_node_index(&g, n));
             assert_eq!(*g.node(*n), *value);
         }
         for (value, e) in &new_edges {
@@ -982,12 +1021,12 @@ mod tests {
         assert_eq!(Graph::len_edge(&inner), live_edges);
         for ix in <_ as GraphOperation<'_>>::node_indices(&inner) {
             assert!(
-                version_of(unsafe { <_ as GraphOperation<'_>>::node_unchecked(&inner, ix) }) > 0
+                version_of(unsafe { <_ as GraphOperation<'_>>::node_unchecked(&inner, &ix) }) > 0
             );
         }
         for ix in <_ as GraphOperation<'_>>::edge_indices(&inner) {
             assert!(
-                version_of(unsafe { <_ as GraphOperation<'_>>::edge_unchecked(&inner, ix) }) > 0
+                version_of(unsafe { <_ as GraphOperation<'_>>::edge_unchecked(&inner, &ix) }) > 0
             );
         }
     }

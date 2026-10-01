@@ -149,20 +149,20 @@ where
     }
 
     graph.scope(|ctx| {
-        let indices: Vec<_> = ctx.node_indices().collect();
+        let indices: Vec<_> = crate::algo::owned_node_indices(ctx).collect();
         let index_map: HashMap<_, _> = indices
             .iter()
-            .copied()
+            .cloned()
             .enumerate()
             .map(|(position, index)| (index, position))
             .collect();
         let nodes: Vec<_> = indices
             .iter()
-            .map(|&index| sanitize(node_label(ctx.node(index)).into()))
+            .map(|index| sanitize(node_label(ctx.node(index.clone())).into()))
             .collect();
         let mut edges = Vec::new();
-        for edge_index in ctx.edge_indices() {
-            let mut endpoints = ctx.endpoints(edge_index).into_iter();
+        for edge_index in crate::algo::owned_edge_indices(ctx) {
+            let mut endpoints = ctx.endpoints(edge_index.clone()).into_iter();
             let from = index_map[&endpoints.next().unwrap()];
             let to = index_map[&endpoints.next().unwrap()];
             edges.push((from, to, sanitize(edge_label(ctx.edge(edge_index)).into())));

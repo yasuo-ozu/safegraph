@@ -57,7 +57,7 @@ where
     G: GraphOperation<'r> + ?Sized,
 {
     #[inline]
-    fn contains_node_index(&self, node_ix: Self::NodeIx) -> bool {
+    fn contains_node_index(&self, node_ix: &Self::NodeIx) -> bool {
         self.inner.contains_node_index(node_ix)
     }
     #[inline]
@@ -81,7 +81,9 @@ where
         self.inner.capacity_edge()
     }
 
+    type NodeIxRef = <G as GraphOperation<'r>>::NodeIxRef;
     type NodeIndices = <G as GraphOperation<'r>>::NodeIndices;
+    type EdgeIxRef = <G as GraphOperation<'r>>::EdgeIxRef;
     type EdgeIndices = <G as GraphOperation<'r>>::EdgeIndices;
 
     #[inline]
@@ -93,11 +95,11 @@ where
         self.inner.edge_indices()
     }
     #[inline]
-    unsafe fn node_unchecked(&self, node_ix: Self::NodeIx) -> &Self::Node {
+    unsafe fn node_unchecked(&self, node_ix: &Self::NodeIx) -> &Self::Node {
         self.inner.node_unchecked(node_ix)
     }
     #[inline]
-    unsafe fn edge_unchecked(&self, edge_ix: Self::EdgeIx) -> &Self::Edge {
+    unsafe fn edge_unchecked(&self, edge_ix: &Self::EdgeIx) -> &Self::Edge {
         self.inner.edge_unchecked(edge_ix)
     }
     #[inline]
@@ -109,7 +111,7 @@ where
     #[inline]
     unsafe fn edge_indices_from_unchecked(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: &Self::NodeIx,
     ) -> Self::EdgeIndicesFrom {
         self.inner.edge_indices_from_unchecked(node_ix)
     }

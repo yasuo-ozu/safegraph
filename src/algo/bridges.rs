@@ -106,7 +106,7 @@ pub struct Bridges<'r, G: ?Sized, N, Ns, Frame> {
 /// Returns an iterator over edge indices that are bridges.
 pub fn bridges<'r, G>(
     graph: &'r G,
-) -> Bridges<'r, G, G::NodeIx, <G as crate::graph::GraphOperation<'r>>::NodeIndices, BridgeFrame<G>>
+) -> Bridges<'r, G, G::NodeIx, super::OwnedNodeIndices<'r, G>, BridgeFrame<G>>
 where
     G: Graph + Bigraph + StableEdge + ?Sized,
 {
@@ -116,19 +116,12 @@ where
         low: HashMap::new(),
         timer: 0,
         // SAFETY: node indices is not exposed to the caller
-        nodes: <_ as crate::graph::GraphOperation<'_>>::node_indices(graph),
+        nodes: super::owned_node_indices(graph),
         stack: Vec::new(),
     }
 }
 
-impl<'r, G> Iterator
-    for Bridges<
-        'r,
-        G,
-        G::NodeIx,
-        <G as crate::graph::GraphOperation<'r>>::NodeIndices,
-        BridgeFrame<G>,
-    >
+impl<'r, G> Iterator for Bridges<'r, G, G::NodeIx, super::OwnedNodeIndices<'r, G>, BridgeFrame<G>>
 where
     G: Graph + Bigraph + StableEdge + ?Sized,
 {
@@ -137,14 +130,14 @@ where
     fn next(&mut self) -> Option<G::EdgeIx> {
         loop {
             if let Some((node, parent_edge, ref neighbors, ref mut idx)) = self.stack.last_mut() {
-                let node = *node;
-                let parent_edge = *parent_edge;
+                let node = node.clone();
+                let parent_edge = parent_edge.clone();
 
                 if *idx < neighbors.len() {
-                    let (eix, neighbor) = neighbors[*idx];
+                    let (eix, neighbor) = neighbors[*idx].clone();
                     *idx += 1;
 
-                    if Some(eix) == parent_edge {
+                    if Some(eix.clone()) == parent_edge {
                         continue;
                     }
 
@@ -152,12 +145,12 @@ where
                         let nl = self.low[&node].min(self.disc[&neighbor]);
                         self.low.insert(node, nl);
                     } else {
-                        self.disc.insert(neighbor, self.timer);
-                        self.low.insert(neighbor, self.timer);
+                        self.disc.insert(neighbor.clone(), self.timer);
+                        self.low.insert(neighbor.clone(), self.timer);
                         self.timer += 1;
 
                         let next_neighbors =
-                            unsafe { collect_undirected_neighbors(self.graph, neighbor) };
+                            unsafe { collect_undirected_neighbors(self.graph, neighbor.clone()) };
                         self.stack.push((neighbor, Some(eix), next_neighbors, 0));
                     }
                 } else {
@@ -165,9 +158,9 @@ where
                     self.stack.pop();
 
                     if let Some((parent, _, _, _)) = self.stack.last() {
-                        let parent = *parent;
+                        let parent = parent.clone();
                         let parent_low = self.low[&parent].min(node_low);
-                        self.low.insert(parent, parent_low);
+                        self.low.insert(parent.clone(), parent_low);
 
                         if node_low > self.disc[&parent] {
                             if let Some(pe) = parent_edge {
@@ -181,11 +174,12 @@ where
                 loop {
                     let start = self.nodes.next()?;
                     if !self.disc.contains_key(&start) {
-                        self.disc.insert(start, self.timer);
-                        self.low.insert(start, self.timer);
+                        self.disc.insert(start.clone(), self.timer);
+                        self.low.insert(start.clone(), self.timer);
                         self.timer += 1;
 
-                        let neighbors = unsafe { collect_undirected_neighbors(self.graph, start) };
+                        let neighbors =
+                            unsafe { collect_undirected_neighbors(self.graph, start.clone()) };
                         self.stack.push((start, None, neighbors, 0));
                         break;
                     }
@@ -217,13 +211,7 @@ pub struct ArticulationPoints<'r, G: ?Sized, N, Ns, Frame> {
 /// Returns an iterator over node indices that are articulation points.
 pub fn articulation_points<'r, G>(
     graph: &'r G,
-) -> ArticulationPoints<
-    'r,
-    G,
-    G::NodeIx,
-    <G as crate::graph::GraphOperation<'r>>::NodeIndices,
-    ArticulationFrame<G>,
->
+) -> ArticulationPoints<'r, G, G::NodeIx, super::OwnedNodeIndices<'r, G>, ArticulationFrame<G>>
 where
     G: Graph + Bigraph + StableNode + ?Sized,
 {
@@ -235,19 +223,13 @@ where
         children_count: HashMap::new(),
         yielded: HashSet::new(),
         timer: 0,
-        nodes: <_ as crate::graph::GraphOperation<'_>>::node_indices(graph),
+        nodes: super::owned_node_indices(graph),
         stack: Vec::new(),
     }
 }
 
 impl<'r, G> Iterator
-    for ArticulationPoints<
-        'r,
-        G,
-        G::NodeIx,
-        <G as crate::graph::GraphOperation<'r>>::NodeIndices,
-        ArticulationFrame<G>,
-    >
+    for ArticulationPoints<'r, G, G::NodeIx, super::OwnedNodeIndices<'r, G>, ArticulationFrame<G>>
 where
     G: Graph + Bigraph + StableNode + ?Sized,
 {
@@ -256,13 +238,13 @@ where
     fn next(&mut self) -> Option<G::NodeIx> {
         loop {
             if let Some((node, ref neighbors, ref mut idx)) = self.stack.last_mut() {
-                let node = *node;
+                let node = node.clone();
 
                 if *idx < neighbors.len() {
-                    let (_eix, neighbor) = neighbors[*idx];
+                    let (_eix, neighbor) = neighbors[*idx].clone();
                     *idx += 1;
 
-                    if self.parent[&node] == Some(neighbor) {
+                    if self.parent[&node] == Some(neighbor.clone()) {
                         continue;
                     }
 
@@ -270,24 +252,24 @@ where
                         let nl = self.low[&node].min(self.disc[&neighbor]);
                         self.low.insert(node, nl);
                     } else {
-                        *self.children_count.entry(node).or_insert(0) += 1;
-                        self.parent.insert(neighbor, Some(node));
-                        self.disc.insert(neighbor, self.timer);
-                        self.low.insert(neighbor, self.timer);
+                        *self.children_count.entry(node.clone()).or_insert(0) += 1;
+                        self.parent.insert(neighbor.clone(), Some(node));
+                        self.disc.insert(neighbor.clone(), self.timer);
+                        self.low.insert(neighbor.clone(), self.timer);
                         self.timer += 1;
 
                         let next_neighbors =
-                            unsafe { collect_undirected_neighbors(self.graph, neighbor) };
+                            unsafe { collect_undirected_neighbors(self.graph, neighbor.clone()) };
                         self.stack.push((neighbor, next_neighbors, 0));
                     }
                 } else {
                     let node_low = self.low[&node];
-                    let node_parent = self.parent[&node];
+                    let node_parent = self.parent[&node].clone();
                     self.stack.pop();
 
                     if let Some(par) = node_parent {
                         let par_low = self.low[&par].min(node_low);
-                        self.low.insert(par, par_low);
+                        self.low.insert(par.clone(), par_low);
 
                         let par_is_root = self.parent[&par].is_none();
                         let is_ap = if par_is_root {
@@ -296,7 +278,7 @@ where
                             node_low >= self.disc[&par]
                         };
 
-                        if is_ap && self.yielded.insert(par) {
+                        if is_ap && self.yielded.insert(par.clone()) {
                             return Some(par);
                         }
                     }
@@ -306,12 +288,13 @@ where
                 loop {
                     let start = self.nodes.next()?;
                     if !self.disc.contains_key(&start) {
-                        self.parent.insert(start, None);
-                        self.disc.insert(start, self.timer);
-                        self.low.insert(start, self.timer);
+                        self.parent.insert(start.clone(), None);
+                        self.disc.insert(start.clone(), self.timer);
+                        self.low.insert(start.clone(), self.timer);
                         self.timer += 1;
 
-                        let neighbors = unsafe { collect_undirected_neighbors(self.graph, start) };
+                        let neighbors =
+                            unsafe { collect_undirected_neighbors(self.graph, start.clone()) };
                         self.stack.push((start, neighbors, 0));
                         break;
                     }
@@ -328,10 +311,14 @@ where
 {
     let mut neighbors = Vec::new();
 
-    for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, node) {
-        for endpoint in <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix) {
+    for eix in
+        <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, node.clone())
+    {
+        for endpoint in
+            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix.clone())
+        {
             if endpoint != node {
-                neighbors.push((eix, endpoint));
+                neighbors.push((eix.clone(), endpoint));
             }
         }
     }

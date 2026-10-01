@@ -504,7 +504,7 @@ pub fn graph(input: TokenStream) -> TokenStream {
                 edge_stmts.push(quote! {
                     let #id = unsafe {
                         #crate_path::graph::capability::InsertEdge::insert_edge_unchecked(
-                            #graph_access, #id, __directed_endpoints(#src_var, #dst_var)
+                            #graph_access, #id, __directed_endpoints(::core::clone::Clone::clone(&#src_var), ::core::clone::Clone::clone(&#dst_var))
                         ).unwrap()
                     };
                 });
@@ -532,7 +532,7 @@ pub fn graph(input: TokenStream) -> TokenStream {
                 edge_stmts.push(quote! {
                     let #id = unsafe {
                         #crate_path::graph::capability::InsertEdge::insert_edge_unchecked(
-                            #graph_access, #expr, __directed_endpoints(#src_var, #dst_var)
+                            #graph_access, #expr, __directed_endpoints(::core::clone::Clone::clone(&#src_var), ::core::clone::Clone::clone(&#dst_var))
                         ).unwrap()
                     };
                 });
@@ -546,7 +546,7 @@ pub fn graph(input: TokenStream) -> TokenStream {
                 edge_stmts.push(quote! {
                     let #tmp = unsafe {
                         #crate_path::graph::capability::InsertEdge::insert_edge_unchecked(
-                            #graph_access, #expr, __directed_endpoints(#src_var, #dst_var)
+                            #graph_access, #expr, __directed_endpoints(::core::clone::Clone::clone(&#src_var), ::core::clone::Clone::clone(&#dst_var))
                         ).unwrap()
                     };
                 });
@@ -560,7 +560,7 @@ pub fn graph(input: TokenStream) -> TokenStream {
                 edge_stmts.push(quote! {
                     let #tmp = unsafe {
                         #crate_path::graph::capability::InsertEdge::insert_edge_unchecked(
-                            #graph_access, Default::default(), __directed_endpoints(#src_var, #dst_var)
+                            #graph_access, Default::default(), __directed_endpoints(::core::clone::Clone::clone(&#src_var), ::core::clone::Clone::clone(&#dst_var))
                         ).unwrap()
                     };
                 });

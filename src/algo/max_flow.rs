@@ -118,8 +118,8 @@ where
     W: Copy + Ord + Default + std::ops::Add<Output = W> + std::ops::Sub<Output = W>,
     F: FnMut(&G::Edge) -> W,
 {
-    assert!(Graph::contains_node_index(graph, source));
-    assert!(Graph::contains_node_index(graph, sink));
+    assert!(Graph::contains_node_index(graph, &source));
+    assert!(Graph::contains_node_index(graph, &sink));
     // SAFETY: endpoints checked above; StableEdge + StableNode keep indices valid.
     unsafe { edmonds_karp_with_flows_unchecked(graph, source, sink, capacity).finish() }
 }
@@ -159,9 +159,9 @@ where
     let mut original_cap: HashMap<G::EdgeIx, W> = HashMap::new();
     let mut residual: HashMap<G::EdgeIx, W> = HashMap::new();
 
-    for eix in <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph) {
-        let cap = capacity(Graph::edge_unchecked(graph, eix));
-        original_cap.insert(eix, cap);
+    for eix in super::owned_edge_indices(graph) {
+        let cap = capacity(Graph::edge_unchecked(graph, eix.clone()));
+        original_cap.insert(eix.clone(), cap);
         residual.insert(eix, cap);
     }
 
@@ -189,9 +189,9 @@ where
         while self.next().is_some() {}
 
         let mut flows: HashMap<G::EdgeIx, W> = HashMap::new();
-        for (&eix, &orig) in &self.original_cap {
-            let flow = orig - self.residual[&eix];
-            flows.insert(eix, flow);
+        for (eix, &orig) in &self.original_cap {
+            let flow = orig - self.residual[eix];
+            flows.insert(eix.clone(), flow);
         }
 
         (self.total_flow, flows)
@@ -214,8 +214,8 @@ where
         let path = unsafe {
             bfs_augmenting_path(
                 self.graph,
-                self.source,
-                self.sink,
+                self.source.clone(),
+                self.sink.clone(),
                 &self.residual,
                 &self.reverse_flow,
             )
@@ -233,7 +233,7 @@ where
                         AugmentStep::Forward(eix) => self.residual[eix],
                         AugmentStep::Reverse(from, to) => self
                             .reverse_flow
-                            .get(&(*from, *to))
+                            .get(&(from.clone(), to.clone()))
                             .copied()
                             .unwrap_or(W::default()),
                     };
@@ -258,23 +258,27 @@ where
                 for step in &augmenting_path {
                     match step {
                         AugmentStep::Forward(eix) => {
-                            let eix = *eix;
-                            let tail = unsafe { self.graph.edge_tail_index_unchecked(eix) };
-                            let head = unsafe { self.graph.edge_head_index_unchecked(eix) };
+                            let eix = eix.clone();
+                            let tail = unsafe { self.graph.edge_tail_index_unchecked(eix.clone()) };
+                            let head = unsafe { self.graph.edge_head_index_unchecked(eix.clone()) };
                             *self.residual.get_mut(&eix).unwrap() =
                                 self.residual[&eix] - bottleneck;
                             let rev = self.reverse_flow.entry((head, tail)).or_default();
                             *rev = *rev + bottleneck;
                         }
                         AugmentStep::Reverse(from, to) => {
-                            let rev = self.reverse_flow.get_mut(&(*from, *to)).unwrap();
+                            let rev = self
+                                .reverse_flow
+                                .get_mut(&(from.clone(), to.clone()))
+                                .unwrap();
                             *rev = *rev - bottleneck;
                             for eix in unsafe {
                                 <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
-                                    self.graph, *to,
+                                    self.graph, to,
                                 )
                             } {
-                                let head = unsafe { self.graph.edge_head_index_unchecked(eix) };
+                                let head =
+                                    unsafe { self.graph.edge_head_index_unchecked(eix.clone()) };
                                 if head == *from {
                                     *self.residual.get_mut(&eix).unwrap() =
                                         self.residual[&eix] + bottleneck;
@@ -313,8 +317,8 @@ where
     let mut visited: HashMap<G::NodeIx, ResidualParent<G>> = HashMap::new();
     let mut queue = VecDeque::new();
     let mut source_visited = HashMap::new();
-    source_visited.insert(source, true);
-    queue.push_back(source);
+    source_visited.insert(source.clone(), true);
+    queue.push_back(source.clone());
 
     while let Some(node) = queue.pop_front() {
         if node == sink {
@@ -331,31 +335,39 @@ where
         }
 
         // Forward edges: node -> neighbor with residual > 0
-        for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, node)
+        for eix in
+            <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, &node)
         {
-            let head = graph.edge_head_index_unchecked(eix);
+            let head = graph.edge_head_index_unchecked(eix.clone());
             if !source_visited.contains_key(&head) && residual[&eix] > W::default() {
-                source_visited.insert(head, true);
-                visited.insert(head, (node, AugmentStep::Forward(eix)));
+                source_visited.insert(head.clone(), true);
+                visited.insert(head.clone(), (node.clone(), AugmentStep::Forward(eix)));
                 queue.push_back(head);
             }
         }
 
         // Reverse edges: if there's flow from some node `pred` to `node`,
         // we can push flow back
-        for eix in Directed::edge_indices_to_unchecked(graph, node) {
+        for eix in Directed::edge_indices_to_unchecked(graph, node.clone()) {
             let pred = graph.edge_tail_index_unchecked(eix);
             if pred == node {
                 continue;
             }
-            if let std::collections::hash_map::Entry::Vacant(e) = source_visited.entry(pred) {
+            if let std::collections::hash_map::Entry::Vacant(e) = source_visited.entry(pred.clone())
+            {
                 let rev_cap = reverse_flow
-                    .get(&(node, pred))
+                    .get(&(node.clone(), pred.clone()))
                     .copied()
                     .unwrap_or(W::default());
                 if rev_cap > W::default() {
                     e.insert(true);
-                    visited.insert(pred, (node, AugmentStep::Reverse(node, pred)));
+                    visited.insert(
+                        pred.clone(),
+                        (
+                            node.clone(),
+                            AugmentStep::Reverse(node.clone(), pred.clone()),
+                        ),
+                    );
                     queue.push_back(pred);
                 }
             }

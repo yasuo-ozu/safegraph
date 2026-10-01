@@ -109,13 +109,13 @@ where
 {
     let mut color: HashMap<G::NodeIx, bool> = HashMap::new();
 
-    for start in <_ as crate::graph::GraphOperation<'_>>::node_indices(graph) {
+    for start in super::owned_node_indices(graph) {
         if color.contains_key(&start) {
             continue;
         }
 
         // BFS 2-coloring
-        color.insert(start, false);
+        color.insert(start.clone(), false);
         let mut queue = VecDeque::new();
         queue.push_back(start);
 
@@ -126,7 +126,10 @@ where
             // SAFETY: edge indices are not exposed to the caller and `graph` is
             // borrowed immutably for the whole call (raw bound-free primitive).
             for eix in unsafe {
-                <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, node)
+                <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(
+                    graph,
+                    node.clone(),
+                )
             } {
                 let mut found_other = false;
                 for endpoint in unsafe {
@@ -142,7 +145,7 @@ where
                             return None; // Same color on both sides of an edge
                         }
                     } else {
-                        color.insert(neighbor, !node_color);
+                        color.insert(neighbor.clone(), !node_color);
                         queue.push_back(neighbor);
                     }
                 }

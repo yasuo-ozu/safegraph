@@ -76,7 +76,7 @@ where
     G: Graph + Directed<'r> + StableNode + ?Sized,
 {
     // Validate the user-supplied start index (panics if invalid).
-    let _ = graph.node(start);
+    let _ = graph.node(start.clone());
     // SAFETY: `StableNode` guarantees the node indices stay valid for the call,
     // and `start` was validated above.
     unsafe { dominators_unchecked(graph, start) }
@@ -95,21 +95,21 @@ where
     let mut visited = std::collections::HashSet::new();
     let mut rpo = Vec::new();
 
-    let mut stack: Vec<(G::NodeIx, bool)> = vec![(start, false)];
+    let mut stack: Vec<(G::NodeIx, bool)> = vec![(start.clone(), false)];
     visited.insert(start);
 
     while let Some((node, expanded)) = stack.last_mut() {
         if *expanded {
-            rpo.push(*node);
+            rpo.push(node.clone());
             stack.pop();
         } else {
             *expanded = true;
-            let node = *node;
+            let node = node.clone();
             // SAFETY: `node` is reachable from the caller-validated `start`.
             let succs: Vec<G::NodeIx> =
                 unsafe { graph.neighbor_indices_from_unchecked(node) }.collect();
             for succ in succs.into_iter().rev() {
-                if visited.insert(succ) {
+                if visited.insert(succ.clone()) {
                     stack.push((succ, false));
                 }
             }
@@ -125,8 +125,11 @@ where
         };
     }
 
-    let rpo_index: HashMap<G::NodeIx, usize> =
-        rpo.iter().enumerate().map(|(i, &n)| (n, i)).collect();
+    let rpo_index: HashMap<G::NodeIx, usize> = rpo
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.clone(), i))
+        .collect();
 
     let n = rpo.len();
     let mut idom: Vec<Option<usize>> = vec![None; n];
@@ -137,7 +140,7 @@ where
     while changed {
         changed = false;
         for i in 1..n {
-            let node = rpo[i];
+            let node = rpo[i].clone();
             // SAFETY: `node` came from the RPO walk, so it is a valid index.
             let preds: Vec<G::NodeIx> =
                 unsafe { graph.neighbor_indices_to_unchecked(node) }.collect();
@@ -166,19 +169,19 @@ where
     let mut pairs = Vec::new();
     for (i, &dom) in idom.iter().enumerate() {
         if let Some(d) = dom {
-            pairs.push((rpo[i], rpo[d]));
+            pairs.push((rpo[i].clone(), rpo[d].clone()));
         }
     }
 
     Dominators { pairs, idx: 0 }
 }
 
-impl<N: Copy> Iterator for Dominators<N> {
+impl<N: Clone> Iterator for Dominators<N> {
     type Item = (N, N);
 
     fn next(&mut self) -> Option<(N, N)> {
         if self.idx < self.pairs.len() {
-            let pair = self.pairs[self.idx];
+            let pair = self.pairs[self.idx].clone();
             self.idx += 1;
             Some(pair)
         } else {

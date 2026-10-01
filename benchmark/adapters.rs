@@ -265,7 +265,7 @@ pub mod sg_vec_checked {
             // `insert_edge` is unavailable — this models its index check.
             assert!(endpoints
                 .iter()
-                .all(|&n| GraphOperation::contains_node_index(&g, n)));
+                .all(|n| GraphOperation::contains_node_index(&g, n)));
             // SAFETY: endpoints validated immediately above.
             unsafe { Graph::insert_edge_unchecked(&mut g, j, endpoints) }.expect("insert_edge");
         }

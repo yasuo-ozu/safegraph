@@ -34,7 +34,7 @@ where
     G: GraphOperation<'r> + 'r,
     <G as GraphProperty>::Edge: 'r,
 {
-    fn contains_node_index(&self, node_ix: Self::NodeIx) -> bool {
+    fn contains_node_index(&self, node_ix: &Self::NodeIx) -> bool {
         self.inner.contains_node_index(node_ix)
     }
 
@@ -58,7 +58,9 @@ where
         self.inner.capacity_edge()
     }
 
+    type NodeIxRef = G::NodeIxRef;
     type NodeIndices = G::NodeIndices;
+    type EdgeIxRef = G::EdgeIxRef;
     type EdgeIndices = G::EdgeIndices;
 
     fn node_indices(&'r self) -> Self::NodeIndices {
@@ -69,11 +71,11 @@ where
         self.inner.edge_indices()
     }
 
-    unsafe fn node_unchecked(&self, node_ix: Self::NodeIx) -> &Self::Node {
+    unsafe fn node_unchecked(&self, node_ix: &Self::NodeIx) -> &Self::Node {
         unsafe { self.inner.node_unchecked(node_ix) }
     }
 
-    unsafe fn edge_unchecked(&self, edge_ix: Self::EdgeIx) -> &Self::Edge {
+    unsafe fn edge_unchecked(&self, edge_ix: &Self::EdgeIx) -> &Self::Edge {
         unsafe { self.inner.edge_unchecked(edge_ix) }
     }
 
@@ -85,9 +87,9 @@ where
 
     unsafe fn edge_indices_from_unchecked(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: &Self::NodeIx,
     ) -> Self::EdgeIndicesFrom {
-        unsafe { self.inner.edge_indices_of_unchecked(node_ix) }
+        unsafe { self.inner.edge_indices_of_unchecked(node_ix.clone()) }
     }
 
     type EdgeIndicesOf = G::EdgeIndicesOf;

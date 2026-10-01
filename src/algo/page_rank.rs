@@ -68,8 +68,7 @@ pub fn page_rank<'r, G>(
 where
     G: Graph + Directed<'r> + StableNode + ?Sized,
 {
-    let nodes: Vec<G::NodeIx> =
-        <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
+    let nodes: Vec<G::NodeIx> = super::owned_node_indices(graph).collect();
     let n = nodes.len();
 
     if n == 0 {
@@ -79,24 +78,26 @@ where
     let initial_rank = 1.0 / n as f64;
 
     // Current ranks
-    let mut rank: HashMap<G::NodeIx, f64> =
-        nodes.iter().map(|&node| (node, initial_rank)).collect();
+    let mut rank: HashMap<G::NodeIx, f64> = nodes
+        .iter()
+        .map(|node| (node.clone(), initial_rank))
+        .collect();
 
     // Precompute out-degrees
     let mut out_degree: HashMap<G::NodeIx, usize> = HashMap::new();
-    for &node in &nodes {
-        let deg = unsafe { graph.neighbor_indices_from_unchecked(node) }.count();
+    for node in nodes.iter().cloned() {
+        let deg = unsafe { graph.neighbor_indices_from_unchecked(node.clone()) }.count();
         out_degree.insert(node, deg);
     }
 
     // Precompute predecessors for each node
     let mut predecessors: HashMap<G::NodeIx, Vec<G::NodeIx>> = HashMap::new();
-    for &node in &nodes {
+    for node in nodes.iter().cloned() {
         predecessors.insert(node, Vec::new());
     }
-    for &node in &nodes {
-        for succ in unsafe { graph.neighbor_indices_from_unchecked(node) } {
-            predecessors.get_mut(&succ).unwrap().push(node);
+    for node in nodes.iter() {
+        for succ in unsafe { graph.neighbor_indices_from_unchecked(node.clone()) } {
+            predecessors.get_mut(&succ).unwrap().push(node.clone());
         }
     }
 
@@ -106,16 +107,16 @@ where
         // Collect dangling node rank sum (nodes with no outgoing edges)
         let dangling_sum: f64 = nodes
             .iter()
-            .filter(|&&node| out_degree[&node] == 0)
-            .map(|&node| rank[&node])
+            .filter(|node| out_degree[*node] == 0)
+            .map(|node| rank[node])
             .sum();
 
-        for &node in &nodes {
+        for node in nodes.iter().cloned() {
             let mut incoming_rank = 0.0;
-            for &pred in &predecessors[&node] {
-                let pred_out = out_degree[&pred];
+            for pred in predecessors[&node].iter() {
+                let pred_out = out_degree[pred];
                 if pred_out > 0 {
-                    incoming_rank += rank[&pred] / pred_out as f64;
+                    incoming_rank += rank[pred] / pred_out as f64;
                 }
             }
 
@@ -127,7 +128,7 @@ where
         // Check convergence
         let max_diff = nodes
             .iter()
-            .map(|&node| (new_rank[&node] - rank[&node]).abs())
+            .map(|node| (new_rank[node] - rank[node]).abs())
             .fold(0.0_f64, f64::max);
 
         rank = new_rank;

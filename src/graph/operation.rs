@@ -7,6 +7,8 @@
 //!
 //! [`Graph`]: super::Graph
 
+use std::borrow::Borrow;
+
 use super::walk_item::WalkItem;
 use super::GraphProperty;
 
@@ -25,19 +27,21 @@ impl<N> Iterator for NeighborIndices<N> {
 pub struct NodeRefIter<'r, I, G>(pub(crate) &'r G, pub(crate) I)
 where
     G: GraphOperation<'r> + ?Sized,
-    I: Iterator<Item = G::NodeIx>;
+    I: Iterator,
+    I::Item: Borrow<G::NodeIx>;
 
 impl<'r, I, G> Iterator for NodeRefIter<'r, I, G>
 where
     G: GraphOperation<'r> + ?Sized,
-    I: Iterator<Item = G::NodeIx>,
+    I: Iterator,
+    I::Item: Borrow<G::NodeIx>,
 {
     type Item = &'r G::Node;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.1.next().map(|ix| {
             // SAFETY: index comes from graph-derived iterators.
-            unsafe { self.0.node_unchecked(ix) }
+            unsafe { self.0.node_unchecked(ix.borrow()) }
         })
     }
 }
@@ -45,19 +49,21 @@ where
 pub struct EdgeRefIter<'r, I, G>(pub(crate) &'r G, pub(crate) I)
 where
     G: GraphOperation<'r> + ?Sized,
-    I: Iterator<Item = G::EdgeIx>;
+    I: Iterator,
+    I::Item: Borrow<G::EdgeIx>;
 
 impl<'r, I, G> Iterator for EdgeRefIter<'r, I, G>
 where
     G: GraphOperation<'r> + ?Sized,
-    I: Iterator<Item = G::EdgeIx>,
+    I: Iterator,
+    I::Item: Borrow<G::EdgeIx>,
 {
     type Item = &'r G::Edge;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.1.next().map(|ix| {
             // SAFETY: index comes from graph-derived iterators.
-            unsafe { self.0.edge_unchecked(ix) }
+            unsafe { self.0.edge_unchecked(ix.borrow()) }
         })
     }
 }
@@ -76,7 +82,7 @@ where
 /// [`Graph`](super::Graph) instead.
 pub trait GraphOperation<'r>: GraphProperty {
     /// Returns `true` if `node_ix` refers to a live node in this graph.
-    fn contains_node_index(&self, node_ix: Self::NodeIx) -> bool;
+    fn contains_node_index(&self, node_ix: &Self::NodeIx) -> bool;
     /// Returns `true` if `edge_ix` refers to a live edge in this graph.
     fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool;
 
@@ -94,10 +100,14 @@ pub trait GraphOperation<'r>: GraphProperty {
         None
     }
 
+    /// Item of [`node_indices`](Self::node_indices): `&'r NodeIx` or an owned `NodeIx`.
+    type NodeIxRef: Borrow<Self::NodeIx>;
     /// Iterator type returned by [`node_indices`](Self::node_indices).
-    type NodeIndices: Iterator<Item = Self::NodeIx>;
+    type NodeIndices: Iterator<Item = Self::NodeIxRef>;
+    /// Item of [`edge_indices`](Self::edge_indices): `&'r EdgeIx` or an owned `EdgeIx`.
+    type EdgeIxRef: Borrow<Self::EdgeIx>;
     /// Iterator type returned by [`edge_indices`](Self::edge_indices).
-    type EdgeIndices: Iterator<Item = Self::EdgeIx>;
+    type EdgeIndices: Iterator<Item = Self::EdgeIxRef>;
 
     /// Returns an iterator over every node index currently in the graph.
     fn node_indices(&'r self) -> Self::NodeIndices;
@@ -107,10 +117,10 @@ pub trait GraphOperation<'r>: GraphProperty {
 
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn node_unchecked(&self, node_ix: Self::NodeIx) -> &Self::Node;
+    unsafe fn node_unchecked(&self, node_ix: &Self::NodeIx) -> &Self::Node;
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_unchecked(&self, edge_ix: Self::EdgeIx) -> &Self::Edge;
+    unsafe fn edge_unchecked(&self, edge_ix: &Self::EdgeIx) -> &Self::Edge;
 
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
@@ -125,8 +135,10 @@ pub trait GraphOperation<'r>: GraphProperty {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn edge_indices_from_unchecked(&'r self, node_ix: Self::NodeIx)
-        -> Self::EdgeIndicesFrom;
+    unsafe fn edge_indices_from_unchecked(
+        &'r self,
+        node_ix: &Self::NodeIx,
+    ) -> Self::EdgeIndicesFrom;
 
     /// Iterator type returned by [`edge_indices_of_unchecked`](Self::edge_indices_of_unchecked).
     type EdgeIndicesOf: Iterator<Item = Self::EdgeIx>;

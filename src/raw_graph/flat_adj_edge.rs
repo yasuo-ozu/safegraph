@@ -30,6 +30,7 @@
 //! sweep. Outgoing queries (`walks_from`, `edge_indices_from`) are always
 //! O(out-degree). With `IS = TNone` there is no reverse index at all.
 
+use crate::collection::IndexKey;
 use core::borrow::Borrow;
 use core::marker::PhantomData;
 use std::fmt::{Debug, Display};
@@ -53,6 +54,9 @@ pub use super::hyper_edge::{IncidenceSet, IncidenceSetRef};
 /// head node owns this edge in its outgoing collection.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct EdgeIx<VIx, EIx>(pub VIx, pub EIx);
+
+// SAFETY: the derived impls are field-wise over `VIx` and `EIx`.
+unsafe impl<VIx: IndexKey, EIx: IndexKey> IndexKey for EdgeIx<VIx, EIx> {}
 
 impl<VIx: Display, EIx: Display> Display for EdgeIx<VIx, EIx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -331,8 +335,8 @@ impl<NC, EC, V, E, VIx, EIx, IS> GraphProperty for FlatAdjEdgeGraph<NC>
 where
     NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>>,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     type Node = V;
     type Edge = E;
@@ -346,8 +350,8 @@ impl<NC, EC, V, E, VIx, EIx, IS> Bigraph for FlatAdjEdgeGraph<NC>
 where
     NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>>,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     fn endpoints_as_array(endpoints: Self::Endpoints) -> [Self::NodeIx; 2] {
         endpoints
@@ -377,13 +381,13 @@ where
     for<'a> NC: RandomAccessRef<'a>,
     for<'a> EC: RandomAccessRef<'a>,
     IS: Default + 'static,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
     V: 'r,
     E: 'r,
 {
-    fn contains_node_index(&self, node_ix: Self::NodeIx) -> bool {
-        self.nodes.contains_index(&node_ix)
+    fn contains_node_index(&self, node_ix: &Self::NodeIx) -> bool {
+        self.nodes.contains_index(node_ix)
     }
 
     fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool {
@@ -407,11 +411,13 @@ where
         total
     }
 
-    type NodeIndices = <NC as RandomAccessRef<'r>>::Indices;
+    type NodeIxRef = <NC as RandomAccessRef<'r>>::IndexRef;
+    type NodeIndices = <NC as RandomAccessRef<'r>>::IndexRefs;
     fn node_indices(&'r self) -> Self::NodeIndices {
-        self.nodes.indices()
+        self.nodes.index_refs()
     }
 
+    type EdgeIxRef = EdgeIx<VIx, EIx>;
     type EdgeIndices = std::vec::IntoIter<EdgeIx<VIx, EIx>>;
     fn edge_indices(&'r self) -> Self::EdgeIndices {
         let mut out = Vec::new();
@@ -424,11 +430,11 @@ where
         out.into_iter()
     }
 
-    unsafe fn node_unchecked(&self, node_ix: Self::NodeIx) -> &Self::Node {
-        unsafe { self.nodes.get_value_unchecked(&node_ix) }
+    unsafe fn node_unchecked(&self, node_ix: &Self::NodeIx) -> &Self::Node {
+        unsafe { self.nodes.get_value_unchecked(node_ix) }
     }
 
-    unsafe fn edge_unchecked(&self, edge_ix: Self::EdgeIx) -> &Self::Edge {
+    unsafe fn edge_unchecked(&self, edge_ix: &Self::EdgeIx) -> &Self::Edge {
         let inner = &unsafe { self.nodes.get_storage_unchecked(&edge_ix.0) }.outgoing;
         // The raw round-trip sidesteps the pre-1.63 borrow checker, which could
         // not prove `EC` outlives the `&self` borrow through the nested
@@ -447,11 +453,11 @@ where
     type EdgeIndicesFrom = EdgeIndicesFromIter<VIx, <EC as RandomAccessRef<'r>>::Indices>;
     unsafe fn edge_indices_from_unchecked(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: &Self::NodeIx,
     ) -> Self::EdgeIndicesFrom {
-        let inner = &unsafe { self.nodes.get_storage_unchecked(&node_ix) }.outgoing;
+        let inner = &unsafe { self.nodes.get_storage_unchecked(node_ix) }.outgoing;
         EdgeIndicesFromIter {
-            head: node_ix,
+            head: *node_ix,
             inner: inner.indices(),
         }
     }
@@ -559,8 +565,8 @@ where
     for<'a> NC: RandomAccessRef<'a>,
     for<'a> EC: RandomAccessRef<'a>,
     IS: 'static,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
     V: 'r,
     E: 'r,
 {
@@ -606,8 +612,8 @@ where
         + InsertableCollection<InsertedIndex = VIx>,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx> + Default,
     IS: Default,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     unsafe fn insert_node_unchecked(
         &mut self,
@@ -627,8 +633,8 @@ where
         + IncomingOps<EC, IS, VIx, EIx>,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx>
         + InsertableCollection<InsertedIndex = EIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     unsafe fn insert_edge_unchecked(
         &mut self,
@@ -651,8 +657,8 @@ impl<'r, NC, EC, V, E, VIx, EIx, IS> UpdateNode<'r> for FlatAdjEdgeGraph<NC>
 where
     NC: UpdatableRandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>> + 'r,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx> + 'r,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
     V: 'r,
     E: 'r,
 {
@@ -676,8 +682,8 @@ where
     NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>>,
     EC: UpdatableRandomAccess<Index = EIx, Value = E, Storage = VIx> + 'static,
     IS: 'static,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     unsafe fn edge_unchecked_mut(&mut self, edge_ix: Self::EdgeIx) -> &mut Self::Edge {
         let inner = &mut unsafe { self.nodes.get_storage_unchecked_mut(&edge_ix.0) }.outgoing;
@@ -690,8 +696,8 @@ where
     NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>>
         + IncomingOps<EC, IS, VIx, EIx>,
     EC: RemovableRandomAccess<Index = EIx, Value = E, Storage = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     unsafe fn take_edge_unchecked(&mut self, edge_ix: Self::EdgeIx) -> Self::Edge {
         let head = edge_ix.0;
@@ -735,8 +741,8 @@ where
     EC: RemovableRandomAccess<Index = EIx, Value = E, Storage = VIx>,
     for<'a> NC: RandomAccessRef<'a>,
     for<'a> EC: RandomAccessRef<'a>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     unsafe fn take_node_unchecked(&mut self, node_ix: Self::NodeIx) -> Self::Node {
         let mut incoming_snapshot: Vec<EdgeIx<VIx, EIx>> =
@@ -848,8 +854,8 @@ unsafe impl<NC, EC, V, E, VIx, EIx, IS> StableNode for FlatAdjEdgeGraph<NC>
 where
     NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>> + StableCollection,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
 }
 
@@ -857,8 +863,8 @@ unsafe impl<NC, EC, V, E, VIx, EIx, IS> StableEdge for FlatAdjEdgeGraph<NC>
 where
     NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>> + StableCollection,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx> + StableCollection,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
 }
 
@@ -868,8 +874,8 @@ where
         + CollectionBiject
         + RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>>,
     EC: RandomAccess<Index = EIx, Value = E, Storage = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
     V: PartialEq,
 {
     fn node_index(&self, node: impl Borrow<Self::Node>) -> Option<Self::NodeIx> {

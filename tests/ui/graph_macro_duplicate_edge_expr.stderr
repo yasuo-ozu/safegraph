@@ -14,9 +14,9 @@ error[E0599]: no method named `stabilize` found for struct `LinkedAdjEdgeGraph<N
   4 |     let mut g = safegraph::VecGraph::<(i64, u32), (i64, u32)>::default().stabilize();
     |                                                                          ^^^^^^^^^ method not found in `LinkedAdjEdgeGraph<Vec<((i64, u32), NodeRepr<u32>)>, Vec<(..., ...)>>`
     |
-   ::: src/graph.rs:288:8
+   ::: src/graph.rs:287:8
     |
-288 |     fn stabilize<'r, N, E>(self) -> StabilizedGraph<'r, Self, N, E>
+287 |     fn stabilize<'r, N, E>(self) -> StabilizedGraph<'r, Self, N, E>
     |        --------- the method is available for `LinkedAdjEdgeGraph<Vec<((i64, u32), NodeRepr<u32>)>, Vec<((i64, u32), EdgeRepr<u32, u32>)>>` here
     |
     = help: items from traits can only be used if the trait is in scope

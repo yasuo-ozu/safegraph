@@ -77,7 +77,7 @@ pub struct GreedyFeedbackArcSet<'r, G: ?Sized, E, N> {
 /// Returns an iterator over the edges in a greedy feedback arc set.
 pub fn greedy_feedback_arc_set<'r, G>(
     graph: &'r G,
-) -> GreedyFeedbackArcSet<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices, G::NodeIx>
+) -> GreedyFeedbackArcSet<'r, G, super::OwnedEdgeIndices<'r, G>, G::NodeIx>
 where
     G: Graph + Directed<'r> + Bigraph + StableEdge + StableNode + ?Sized,
 {
@@ -85,8 +85,7 @@ where
     // 1. Build a linear ordering of nodes (eagerly)
     // 2. Edges going "backward" in the ordering form the feedback arc set (lazily)
 
-    let nodes: Vec<G::NodeIx> =
-        <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
+    let nodes: Vec<G::NodeIx> = super::owned_node_indices(graph).collect();
 
     let position = if nodes.is_empty() {
         HashMap::new()
@@ -96,14 +95,14 @@ where
         let mut out_deg: HashMap<G::NodeIx, usize> = HashMap::new();
         let mut remaining: HashSet<G::NodeIx> = HashSet::new();
 
-        for &node in &nodes {
-            in_deg.insert(node, 0);
-            out_deg.insert(node, 0);
+        for node in nodes.iter().cloned() {
+            in_deg.insert(node.clone(), 0);
+            out_deg.insert(node.clone(), 0);
             remaining.insert(node);
         }
 
-        for eix in <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph) {
-            let tail = unsafe { graph.edge_tail_index_unchecked(eix) };
+        for eix in super::owned_edge_indices(graph) {
+            let tail = unsafe { graph.edge_tail_index_unchecked(eix.clone()) };
             let head = unsafe { graph.edge_head_index_unchecked(eix) };
             if tail != head {
                 *out_deg.get_mut(&tail).unwrap() += 1;
@@ -123,13 +122,15 @@ where
 
                 let sinks: Vec<G::NodeIx> = remaining
                     .iter()
-                    .filter(|&&n| cur_out[&n] == 0)
-                    .copied()
+                    .filter(|n| cur_out[*n] == 0)
+                    .cloned()
                     .collect();
                 for sink in sinks {
                     remaining.remove(&sink);
-                    right.push_front(sink);
-                    for pred_eix in unsafe { Directed::edge_indices_to_unchecked(graph, sink) } {
+                    right.push_front(sink.clone());
+                    for pred_eix in
+                        unsafe { Directed::edge_indices_to_unchecked(graph, sink.clone()) }
+                    {
                         let pred = unsafe { graph.edge_tail_index_unchecked(pred_eix) };
                         if remaining.contains(&pred) && pred != sink {
                             *cur_out.get_mut(&pred).unwrap() -= 1;
@@ -140,15 +141,15 @@ where
 
                 let sources: Vec<G::NodeIx> = remaining
                     .iter()
-                    .filter(|&&n| cur_in[&n] == 0)
-                    .copied()
+                    .filter(|n| cur_in[*n] == 0)
+                    .cloned()
                     .collect();
                 for source in sources {
                     remaining.remove(&source);
-                    left.push_back(source);
+                    left.push_back(source.clone());
                     for succ_eix in unsafe {
                         <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
-                            graph, source,
+                            graph, &source,
                         )
                     } {
                         let succ = unsafe { graph.edge_head_index_unchecked(succ_eix) };
@@ -166,22 +167,22 @@ where
 
             let best = remaining
                 .iter()
-                .max_by_key(|&&n| cur_out[&n] as isize - cur_in[&n] as isize)
-                .copied()
+                .max_by_key(|n| cur_out[*n] as isize - cur_in[*n] as isize)
+                .cloned()
                 .unwrap();
 
             remaining.remove(&best);
-            left.push_back(best);
+            left.push_back(best.clone());
 
             for succ_eix in unsafe {
-                <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, best)
+                <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, &best)
             } {
                 let succ = unsafe { graph.edge_head_index_unchecked(succ_eix) };
                 if remaining.contains(&succ) && succ != best {
                     *cur_in.get_mut(&succ).unwrap() -= 1;
                 }
             }
-            for pred_eix in unsafe { Directed::edge_indices_to_unchecked(graph, best) } {
+            for pred_eix in unsafe { Directed::edge_indices_to_unchecked(graph, best.clone()) } {
                 let pred = unsafe { graph.edge_tail_index_unchecked(pred_eix) };
                 if remaining.contains(&pred) && pred != best {
                     *cur_out.get_mut(&pred).unwrap() -= 1;
@@ -193,11 +194,15 @@ where
         ordering.extend(left);
         ordering.extend(right);
 
-        ordering.iter().enumerate().map(|(i, &n)| (n, i)).collect()
+        ordering
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.clone(), i))
+            .collect()
     };
 
     // Get a fresh edge iterator for the lazy phase
-    let edges = <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph);
+    let edges = super::owned_edge_indices(graph);
 
     GreedyFeedbackArcSet {
         graph,
@@ -206,8 +211,7 @@ where
     }
 }
 
-impl<'r, G> Iterator
-    for GreedyFeedbackArcSet<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices, G::NodeIx>
+impl<'r, G> Iterator for GreedyFeedbackArcSet<'r, G, super::OwnedEdgeIndices<'r, G>, G::NodeIx>
 where
     G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
 {
@@ -216,8 +220,8 @@ where
     fn next(&mut self) -> Option<G::EdgeIx> {
         loop {
             let eix = self.edges.next()?;
-            let tail = unsafe { self.graph.edge_tail_index_unchecked(eix) };
-            let head = unsafe { self.graph.edge_head_index_unchecked(eix) };
+            let tail = unsafe { self.graph.edge_tail_index_unchecked(eix.clone()) };
+            let head = unsafe { self.graph.edge_head_index_unchecked(eix.clone()) };
             if tail == head {
                 // Self-loops are always in the feedback arc set
                 return Some(eix);

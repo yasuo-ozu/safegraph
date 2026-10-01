@@ -118,15 +118,7 @@ pub struct MinSpanningTree<'r, G: ?Sized, W, F, N, E, Ns> {
 pub fn min_spanning_tree<'r, G, W, F>(
     graph: &'r G,
     edge_weight: F,
-) -> MinSpanningTree<
-    'r,
-    G,
-    W,
-    F,
-    G::NodeIx,
-    G::EdgeIx,
-    <G as crate::graph::GraphOperation<'r>>::NodeIndices,
->
+) -> MinSpanningTree<'r, G, W, F, G::NodeIx, G::EdgeIx, super::OwnedNodeIndices<'r, G>>
 where
     G: Graph + Bigraph + StableEdge + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default,
@@ -137,20 +129,12 @@ where
         edge_weight,
         in_mst: HashSet::new(),
         heap: BinaryHeap::new(),
-        nodes: <_ as crate::graph::GraphOperation<'_>>::node_indices(graph),
+        nodes: super::owned_node_indices(graph),
     }
 }
 
 impl<'r, G, W, F> Iterator
-    for MinSpanningTree<
-        'r,
-        G,
-        W,
-        F,
-        G::NodeIx,
-        G::EdgeIx,
-        <G as crate::graph::GraphOperation<'r>>::NodeIndices,
-    >
+    for MinSpanningTree<'r, G, W, F, G::NodeIx, G::EdgeIx, super::OwnedNodeIndices<'r, G>>
 where
     G: Graph + Bigraph + StableEdge + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default,
@@ -164,12 +148,13 @@ where
             while let Some(EdgeCandidate { edge_ix, .. }) = self.heap.pop() {
                 let eps: Vec<G::NodeIx> = unsafe {
                     <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
-                        self.graph, edge_ix,
+                        self.graph,
+                        edge_ix.clone(),
                     )
                 }
                 .into_iter()
                 .collect();
-                let (a, b) = (eps[0], eps[1]);
+                let (a, b) = (eps[0].clone(), eps[1].clone());
 
                 let new_node = if !self.in_mst.contains(&a) {
                     Some(a)
@@ -180,7 +165,7 @@ where
                 };
 
                 if let Some(node) = new_node {
-                    self.in_mst.insert(node);
+                    self.in_mst.insert(node.clone());
                     unsafe {
                         add_incident_edges(
                             self.graph,
@@ -198,7 +183,7 @@ where
             loop {
                 let start = self.nodes.next()?;
                 if !self.in_mst.contains(&start) {
-                    self.in_mst.insert(start);
+                    self.in_mst.insert(start.clone());
                     unsafe {
                         add_incident_edges(
                             self.graph,
@@ -227,14 +212,16 @@ unsafe fn add_incident_edges<G, W, F>(
     W: Copy + Ord,
     F: Fn(&G::Edge) -> W,
 {
-    for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, node) {
+    for eix in
+        <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, node.clone())
+    {
         let eps: Vec<G::NodeIx> =
-            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix)
+            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix.clone())
                 .into_iter()
                 .collect();
-        let (a, b) = (eps[0], eps[1]);
+        let (a, b) = (eps[0].clone(), eps[1].clone());
         if (a == node && !in_mst.contains(&b)) || (b == node && !in_mst.contains(&a)) {
-            let w = edge_weight(Graph::edge_unchecked(graph, eix));
+            let w = edge_weight(Graph::edge_unchecked(graph, eix.clone()));
             heap.push(EdgeCandidate {
                 weight: w,
                 edge_ix: eix,

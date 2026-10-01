@@ -93,8 +93,8 @@ pub fn all_simple_paths<'r, G>(
 where
     G: Graph + Directed<'r> + StableNode + ?Sized,
 {
-    assert!(Graph::contains_node_index(graph, from));
-    assert!(Graph::contains_node_index(graph, to));
+    assert!(Graph::contains_node_index(graph, &from));
+    assert!(Graph::contains_node_index(graph, &to));
     // SAFETY: indices checked above; StableNode guarantees index stability.
     unsafe {
         all_simple_paths_unchecked(
@@ -127,9 +127,11 @@ where
     let min_length = min_intermediate_nodes + 2; // +2 for from and to
 
     let mut visited = HashSet::new();
-    visited.insert(from);
+    visited.insert(from.clone());
 
-    let succs: Vec<G::NodeIx> = graph.neighbor_indices_from_unchecked(from).collect();
+    let succs: Vec<G::NodeIx> = graph
+        .neighbor_indices_from_unchecked(from.clone())
+        .collect();
 
     AllSimplePaths {
         graph,
@@ -166,7 +168,7 @@ where
                 continue;
             }
 
-            let succ = self.successors[depth][self.indices[depth]];
+            let succ = self.successors[depth][self.indices[depth]].clone();
             self.indices[depth] += 1;
 
             if succ == self.target {
@@ -174,7 +176,7 @@ where
                 let path_len = self.stack.len() + 1;
                 if path_len >= self.min_length {
                     let mut path = self.stack.clone();
-                    path.push(self.target);
+                    path.push(self.target.clone());
                     return Some(path);
                 }
                 continue;
@@ -185,13 +187,13 @@ where
                 continue;
             }
 
-            if !self.visited.insert(succ) {
+            if !self.visited.insert(succ.clone()) {
                 continue; // Already on the current path
             }
 
             // SAFETY: succ came from the graph. Caller guarantees no modification.
             let succ_succs: Vec<G::NodeIx> =
-                unsafe { self.graph.neighbor_indices_from_unchecked(succ) }.collect();
+                unsafe { self.graph.neighbor_indices_from_unchecked(succ.clone()) }.collect();
 
             self.stack.push(succ);
             self.successors.push(succ_succs);

@@ -20,6 +20,7 @@
 //! The invariant `eix ∈ nodes[vix].Storage  ⇔  vix ∈ edges[eix].Storage`
 //! is maintained by every insert / remove path.
 
+use crate::collection::IndexKey;
 use core::marker::PhantomData;
 use std::collections::{btree_set, hash_set, BTreeSet, HashMap, HashSet};
 use std::fmt::{Debug, Display};
@@ -193,8 +194,8 @@ where
     EC: RandomAccess<Index = EIx, Value = E, Storage = ES>,
     IS: IncidenceSet<EIx>,
     ES: Endpoints<NodeIx = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     type Node = V;
     type Edge = E;
@@ -283,13 +284,13 @@ where
     ES: Endpoints<NodeIx = VIx> + 'r,
     for<'a> NC: RandomAccessRef<'a>,
     for<'a> EC: RandomAccessRef<'a>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
     V: 'r,
     E: 'r,
 {
-    fn contains_node_index(&self, node_ix: Self::NodeIx) -> bool {
-        self.nodes.contains_index(&node_ix)
+    fn contains_node_index(&self, node_ix: &Self::NodeIx) -> bool {
+        self.nodes.contains_index(node_ix)
     }
 
     fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool {
@@ -304,22 +305,24 @@ where
         Collection::len(&self.edges)
     }
 
-    type NodeIndices = <NC as RandomAccessRef<'r>>::Indices;
+    type NodeIxRef = <NC as RandomAccessRef<'r>>::IndexRef;
+    type NodeIndices = <NC as RandomAccessRef<'r>>::IndexRefs;
     fn node_indices(&'r self) -> Self::NodeIndices {
-        self.nodes.indices()
+        self.nodes.index_refs()
     }
 
-    type EdgeIndices = <EC as RandomAccessRef<'r>>::Indices;
+    type EdgeIxRef = <EC as RandomAccessRef<'r>>::IndexRef;
+    type EdgeIndices = <EC as RandomAccessRef<'r>>::IndexRefs;
     fn edge_indices(&'r self) -> Self::EdgeIndices {
-        self.edges.indices()
+        self.edges.index_refs()
     }
 
-    unsafe fn node_unchecked(&self, node_ix: Self::NodeIx) -> &Self::Node {
-        unsafe { self.nodes.get_value_unchecked(&node_ix) }
+    unsafe fn node_unchecked(&self, node_ix: &Self::NodeIx) -> &Self::Node {
+        unsafe { self.nodes.get_value_unchecked(node_ix) }
     }
 
-    unsafe fn edge_unchecked(&self, edge_ix: Self::EdgeIx) -> &Self::Edge {
-        unsafe { self.edges.get_value_unchecked(&edge_ix) }
+    unsafe fn edge_unchecked(&self, edge_ix: &Self::EdgeIx) -> &Self::Edge {
+        unsafe { self.edges.get_value_unchecked(edge_ix) }
     }
 
     unsafe fn endpoints_unchecked(&self, edge_ix: Self::EdgeIx) -> Self::Endpoints {
@@ -329,9 +332,9 @@ where
     type EdgeIndicesFrom = EdgeIndicesFromIter<<IS as IncidenceSetRef<'r, EIx>>::Iter>;
     unsafe fn edge_indices_from_unchecked(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: &Self::NodeIx,
     ) -> Self::EdgeIndicesFrom {
-        let storage = unsafe { self.nodes.get_storage_unchecked(&node_ix) };
+        let storage = unsafe { self.nodes.get_storage_unchecked(node_ix) };
         EdgeIndicesFromIter {
             inner: IncidenceSetRef::iter(storage),
         }
@@ -340,7 +343,7 @@ where
     type EdgeIndicesOf = EdgeIndicesFromIter<<IS as IncidenceSetRef<'r, EIx>>::Iter>;
     unsafe fn edge_indices_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesOf {
         // Undirected: same as edge_indices_from.
-        unsafe { self.edge_indices_from_unchecked(node_ix) }
+        unsafe { self.edge_indices_from_unchecked(&node_ix) }
     }
 
     type WalksFrom = Walks<'r, NC, EC, VIx, EIx, IS, ES>;
@@ -379,8 +382,8 @@ where
     EC: RandomAccess<Index = EIx, Value = E, Storage = ES>,
     IS: IncidenceSet<EIx>,
     ES: Endpoints<NodeIx = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     unsafe fn insert_node_unchecked(
         &mut self,
@@ -397,8 +400,8 @@ where
         + InsertableCollection<InsertedIndex = EIx>,
     IS: IncidenceSet<EIx>,
     ES: Endpoints<NodeIx = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     unsafe fn insert_edge_unchecked(
         &mut self,
@@ -424,8 +427,8 @@ where
     EC: RandomAccess<Index = EIx, Value = E, Storage = ES> + 'r,
     IS: IncidenceSet<EIx> + 'static,
     ES: Endpoints<NodeIx = VIx> + 'r,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
     V: 'r,
     E: 'r,
 {
@@ -450,8 +453,8 @@ where
     EC: UpdatableRandomAccess<Index = EIx, Value = E, Storage = ES>,
     IS: IncidenceSet<EIx>,
     ES: Endpoints<NodeIx = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     unsafe fn edge_unchecked_mut(&mut self, edge_ix: Self::EdgeIx) -> &mut Self::Edge {
         unsafe { self.edges.get_value_unchecked_mut(&edge_ix) }
@@ -465,8 +468,8 @@ where
     for<'a> EC: RandomAccessRef<'a>,
     IS: IncidenceSet<EIx>,
     ES: Endpoints<NodeIx = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     unsafe fn take_edge_unchecked(&mut self, edge_ix: Self::EdgeIx) -> Self::Edge {
         let (e, endpoints, swapped) = unsafe { self.edges.take_unchecked(&edge_ix) };
@@ -503,8 +506,8 @@ where
     for<'a> EC: RandomAccessRef<'a>,
     IS: IncidenceSet<EIx> + for<'a> IncidenceSetRef<'a, EIx> + 'static,
     ES: Endpoints<NodeIx = VIx> + 'static,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
     unsafe fn take_node_unchecked(&mut self, node_ix: Self::NodeIx) -> Self::Node {
         // Re-reading the incidence set after each removal picks up EIxs
@@ -591,8 +594,8 @@ where
     EC: RandomAccess<Index = EIx, Value = E, Storage = ES>,
     IS: IncidenceSet<EIx>,
     ES: Endpoints<NodeIx = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
 }
 
@@ -602,8 +605,8 @@ where
     EC: RandomAccess<Index = EIx, Value = E, Storage = ES> + StableCollection,
     IS: IncidenceSet<EIx>,
     ES: Endpoints<NodeIx = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
 {
 }
 
@@ -615,8 +618,8 @@ where
     EC: RandomAccess<Index = EIx, Value = E, Storage = ES>,
     IS: IncidenceSet<EIx>,
     ES: Endpoints<NodeIx = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
     V: PartialEq,
 {
     fn node_index(&self, node: impl core::borrow::Borrow<Self::Node>) -> Option<Self::NodeIx> {
@@ -634,8 +637,8 @@ where
         + StableCollection,
     IS: IncidenceSet<EIx>,
     ES: Endpoints<NodeIx = VIx>,
-    VIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
-    EIx: Copy + Eq + Ord + Hash + Display + Debug + 'static,
+    VIx: Copy + IndexKey + Display + Debug + 'static,
+    EIx: Copy + IndexKey + Display + Debug + 'static,
     E: PartialEq,
 {
     fn edge_index(&self, edge: impl core::borrow::Borrow<Self::Edge>) -> Option<Self::EdgeIx> {
