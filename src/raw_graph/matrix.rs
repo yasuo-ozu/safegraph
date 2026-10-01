@@ -16,6 +16,7 @@
 //! consumed as a read-only directed graph through [`GraphOperation`] /
 //! [`Directed`].
 
+use crate::collection::IndexKey;
 use std::fmt::{self, Debug, Display, Formatter};
 
 use sprs::{CsMat, TriMat};
@@ -28,6 +29,9 @@ use crate::graph::GraphProperty;
 /// Edge index = `(head, tail)` matrix coordinates.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct EdgeIx(pub u32, pub u32);
+
+// SAFETY: derived field-wise over two `u32`s.
+unsafe impl IndexKey for EdgeIx {}
 
 impl Display for EdgeIx {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -127,8 +131,8 @@ impl<N, E> Bigraph for CsMatGraph<N, E> {
 }
 
 impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
-    fn contains_node_index(&self, node_ix: Self::NodeIx) -> bool {
-        (node_ix as usize) < self.nodes.len()
+    fn contains_node_index(&self, node_ix: &Self::NodeIx) -> bool {
+        (*node_ix as usize) < self.nodes.len()
     }
 
     fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool {
@@ -145,11 +149,13 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
         self.edges.nnz()
     }
 
+    type NodeIxRef = u32;
     type NodeIndices = std::ops::Range<u32>;
     fn node_indices(&'r self) -> Self::NodeIndices {
         0..(self.nodes.len() as u32)
     }
 
+    type EdgeIxRef = EdgeIx;
     type EdgeIndices = std::vec::IntoIter<EdgeIx>;
     fn edge_indices(&'r self) -> Self::EdgeIndices {
         let mut out: Vec<EdgeIx> = Vec::with_capacity(self.edges.nnz());
@@ -159,12 +165,12 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
         out.into_iter()
     }
 
-    unsafe fn node_unchecked(&self, node_ix: Self::NodeIx) -> &Self::Node {
+    unsafe fn node_unchecked(&self, node_ix: &Self::NodeIx) -> &Self::Node {
         // SAFETY: precondition.
-        unsafe { self.nodes.get_unchecked(node_ix as usize) }
+        unsafe { self.nodes.get_unchecked(*node_ix as usize) }
     }
 
-    unsafe fn edge_unchecked(&self, edge_ix: Self::EdgeIx) -> &Self::Edge {
+    unsafe fn edge_unchecked(&self, edge_ix: &Self::EdgeIx) -> &Self::Edge {
         // SAFETY: precondition — edge_ix is valid (i.e. nonzero in the matrix).
         self.edges
             .get(edge_ix.0 as usize, edge_ix.1 as usize)
@@ -178,9 +184,9 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
     type EdgeIndicesFrom = std::vec::IntoIter<EdgeIx>;
     unsafe fn edge_indices_from_unchecked(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: &Self::NodeIx,
     ) -> Self::EdgeIndicesFrom {
-        let row = node_ix as usize;
+        let row = *node_ix as usize;
         let out: Vec<EdgeIx> = match self.edges.outer_view(row) {
             Some(view) => view
                 .indices()

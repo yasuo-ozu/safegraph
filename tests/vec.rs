@@ -27,10 +27,10 @@ where
     let n2 = ctx.insert_node(2).unwrap();
     let n3 = ctx.insert_node(3).unwrap();
     let ep = |a, b| G::Endpoints::try_from_node_indices([a, b]).unwrap();
-    let e0 = ctx.insert_edge(10, ep(n0, n1)).unwrap();
-    let e1 = ctx.insert_edge(11, ep(n0, n2)).unwrap();
-    let e2 = ctx.insert_edge(12, ep(n1, n3)).unwrap();
-    let e3 = ctx.insert_edge(13, ep(n2, n3)).unwrap();
+    let e0 = ctx.insert_edge(10, ep(n0.clone(), n1.clone())).unwrap();
+    let e1 = ctx.insert_edge(11, ep(n0.clone(), n2.clone())).unwrap();
+    let e2 = ctx.insert_edge(12, ep(n1.clone(), n3.clone())).unwrap();
+    let e3 = ctx.insert_edge(13, ep(n2.clone(), n3.clone())).unwrap();
     ([n0, n1, n2, n3], [e0, e1, e2, e3])
 }
 
@@ -45,8 +45,8 @@ fn insert_nodes() {
     let mut g = new_graph();
     let n0 = g.insert_node(10).unwrap();
     let n1 = g.insert_node(20).unwrap();
-    assert!(g.contains_node_index(n0));
-    assert!(g.contains_node_index(n1));
+    assert!(g.contains_node_index(&n0));
+    assert!(g.contains_node_index(&n1));
 }
 
 #[test]
@@ -253,8 +253,8 @@ fn remove_edge_basic() {
     g.remove_edge(e0);
     assert_eq!(g.edge_indices().count(), 1);
     // nodes survive
-    assert!(g.contains_node_index(n0));
-    assert!(g.contains_node_index(n1));
+    assert!(g.contains_node_index(&n0));
+    assert!(g.contains_node_index(&n1));
 }
 
 #[test]
@@ -486,7 +486,7 @@ fn take_nodes_edges_removes_edges_only() {
     assert!(g.contains_edge_index(e1));
     assert!(g.contains_edge_index(e2));
     for n in [n0, n1, n2, n3] {
-        assert!(g.contains_node_index(n));
+        assert!(g.contains_node_index(&n));
     }
 }
 
@@ -497,10 +497,10 @@ fn take_nodes_edges_removes_nodes_cascades() {
     let (nodes, edges): (Vec<u32>, Vec<u32>) = g.take_nodes_edges([n1], []);
     assert_eq!(nodes, vec![1]);
     assert!(edges.is_empty());
-    assert!(!g.contains_node_index(n1));
+    assert!(!g.contains_node_index(&n1));
     assert!(!g.contains_edge_index(e0));
     assert!(!g.contains_edge_index(e2));
-    assert!(g.contains_node_index(n0));
+    assert!(g.contains_node_index(&n0));
     assert!(g.contains_edge_index(e1));
     assert!(g.contains_edge_index(e3));
 }
@@ -512,13 +512,13 @@ fn take_nodes_edges_both_nodes_and_edges() {
     let (nodes, edges): (Vec<u32>, Vec<u32>) = g.take_nodes_edges([n3], [e1]);
     assert_eq!(nodes, vec![3]);
     assert_eq!(edges, vec![11]);
-    assert!(!g.contains_node_index(n3));
+    assert!(!g.contains_node_index(&n3));
     assert!(!g.contains_edge_index(e1));
     assert!(!g.contains_edge_index(e2));
     assert!(!g.contains_edge_index(e3));
-    assert!(g.contains_node_index(n0));
-    assert!(g.contains_node_index(n1));
-    assert!(g.contains_node_index(n2));
+    assert!(g.contains_node_index(&n0));
+    assert!(g.contains_node_index(&n1));
+    assert!(g.contains_node_index(&n2));
     assert!(g.contains_edge_index(e0));
 }
 
@@ -530,7 +530,7 @@ fn take_nodes_edges_empty_is_noop() {
     assert!(nodes.is_empty());
     assert!(edges.is_empty());
     for n in ns {
-        assert!(g.contains_node_index(n));
+        assert!(g.contains_node_index(&n));
     }
     for e in es {
         assert!(g.contains_edge_index(e));
@@ -573,7 +573,7 @@ fn take_nodes_edges_self_loop() {
     assert_eq!(edges, vec![10]);
     assert!(!g.contains_edge_index(e_loop));
     assert!(g.contains_edge_index(e_norm));
-    assert!(g.contains_node_index(n0));
+    assert!(g.contains_node_index(&n0));
 }
 
 #[test]

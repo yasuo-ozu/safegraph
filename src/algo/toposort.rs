@@ -97,24 +97,25 @@ where
     let mut state: HashMap<G::NodeIx, u8> = HashMap::new();
     let mut order = Vec::new();
 
-    for node in <_ as crate::graph::GraphOperation<'_>>::node_indices(graph) {
+    for node in super::owned_node_indices(graph) {
         if state.get(&node).copied().unwrap_or(0) != 0 {
             continue;
         }
         let succs: Vec<G::NodeIx> =
-            unsafe { graph.neighbor_indices_from_unchecked(node) }.collect();
-        let mut stack: Vec<(G::NodeIx, Vec<G::NodeIx>, usize)> = vec![(node, succs, 0)];
+            unsafe { graph.neighbor_indices_from_unchecked(node.clone()) }.collect();
+        let mut stack: Vec<(G::NodeIx, Vec<G::NodeIx>, usize)> = vec![(node.clone(), succs, 0)];
         state.insert(node, 1);
 
         while let Some((current, ref succs, ref mut idx)) = stack.last_mut() {
             if *idx < succs.len() {
-                let succ = succs[*idx];
+                let succ = succs[*idx].clone();
                 *idx += 1;
                 match state.get(&succ).copied().unwrap_or(0) {
                     0 => {
-                        state.insert(succ, 1);
+                        state.insert(succ.clone(), 1);
                         let succ_succs: Vec<G::NodeIx> =
-                            unsafe { graph.neighbor_indices_from_unchecked(succ) }.collect();
+                            unsafe { graph.neighbor_indices_from_unchecked(succ.clone()) }
+                                .collect();
                         stack.push((succ, succ_succs, 0));
                     }
                     1 => {
@@ -123,8 +124,8 @@ where
                     _ => {} // already finished
                 }
             } else {
-                let current = *current;
-                state.insert(current, 2);
+                let current = current.clone();
+                state.insert(current.clone(), 2);
                 order.push(current);
                 stack.pop();
             }
@@ -143,8 +144,8 @@ where
 {
     let mut in_degree: HashMap<G::NodeIx, usize> = HashMap::new();
 
-    for node in <_ as crate::graph::GraphOperation<'_>>::node_indices(graph) {
-        in_degree.entry(node).or_insert(0);
+    for node in super::owned_node_indices(graph) {
+        in_degree.entry(node.clone()).or_insert(0);
         for succ in unsafe { graph.neighbor_indices_from_unchecked(node) } {
             *in_degree.entry(succ).or_insert(0) += 1;
         }
@@ -153,14 +154,14 @@ where
     let mut queue: VecDeque<G::NodeIx> = in_degree
         .iter()
         .filter(|(_, &deg)| deg == 0)
-        .map(|(&n, _)| n)
+        .map(|(n, _)| n.clone())
         .collect();
 
     let mut order = Vec::new();
     let total = in_degree.len();
 
     while let Some(node) = queue.pop_front() {
-        order.push(node);
+        order.push(node.clone());
         for succ in unsafe { graph.neighbor_indices_from_unchecked(node) } {
             let deg = in_degree.get_mut(&succ).unwrap();
             *deg -= 1;
@@ -176,7 +177,7 @@ where
         let cycle_node = in_degree
             .iter()
             .find(|(_, &deg)| deg > 0)
-            .map(|(&n, _)| n)
+            .map(|(n, _)| n.clone())
             .unwrap();
         Err(CycleError { node: cycle_node })
     }

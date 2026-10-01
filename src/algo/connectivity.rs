@@ -86,7 +86,7 @@ pub struct TarjanScc<'r, G: ?Sized, N, Ns> {
 /// Returns an iterator yielding SCCs in reverse topological order.
 pub fn tarjan_scc<'r, G>(
     graph: &'r G,
-) -> TarjanScc<'r, G, G::NodeIx, <G as crate::graph::GraphOperation<'r>>::NodeIndices>
+) -> TarjanScc<'r, G, G::NodeIx, super::OwnedNodeIndices<'r, G>>
 where
     G: Graph + Directed<'r> + StableNode + ?Sized,
 {
@@ -97,13 +97,12 @@ where
         on_stack: HashSet::new(),
         index: HashMap::new(),
         lowlink: HashMap::new(),
-        nodes: <_ as crate::graph::GraphOperation<'_>>::node_indices(graph),
+        nodes: super::owned_node_indices(graph),
         dfs_stack: Vec::new(),
     }
 }
 
-impl<'r, G> Iterator
-    for TarjanScc<'r, G, G::NodeIx, <G as crate::graph::GraphOperation<'r>>::NodeIndices>
+impl<'r, G> Iterator for TarjanScc<'r, G, G::NodeIx, super::OwnedNodeIndices<'r, G>>
 where
     G: Graph + Directed<'r> + StableNode + ?Sized,
 {
@@ -113,19 +112,20 @@ where
         loop {
             if let Some((current, ref succs, ref mut idx)) = self.dfs_stack.last_mut() {
                 if *idx < succs.len() {
-                    let succ = succs[*idx];
+                    let succ = succs[*idx].clone();
                     *idx += 1;
-                    let current = *current;
+                    let current = current.clone();
 
                     if !self.index.contains_key(&succ) {
-                        self.index.insert(succ, self.index_counter);
-                        self.lowlink.insert(succ, self.index_counter);
+                        self.index.insert(succ.clone(), self.index_counter);
+                        self.lowlink.insert(succ.clone(), self.index_counter);
                         self.index_counter += 1;
-                        self.scc_stack.push(succ);
-                        self.on_stack.insert(succ);
+                        self.scc_stack.push(succ.clone());
+                        self.on_stack.insert(succ.clone());
 
                         let succ_succs: Vec<G::NodeIx> =
-                            unsafe { self.graph.neighbor_indices_from_unchecked(succ) }.collect();
+                            unsafe { self.graph.neighbor_indices_from_unchecked(succ.clone()) }
+                                .collect();
                         self.dfs_stack.push((succ, succ_succs, 0));
                     } else if self.on_stack.contains(&succ) {
                         let succ_index = self.index[&succ];
@@ -135,10 +135,10 @@ where
                         }
                     }
                 } else {
-                    let current = *current;
+                    let current = current.clone();
 
                     if self.dfs_stack.len() > 1 {
-                        let parent = self.dfs_stack[self.dfs_stack.len() - 2].0;
+                        let parent = self.dfs_stack[self.dfs_stack.len() - 2].0.clone();
                         let current_ll = self.lowlink[&current];
                         let parent_ll = self.lowlink.get_mut(&parent).unwrap();
                         if current_ll < *parent_ll {
@@ -154,7 +154,7 @@ where
                         loop {
                             let w = self.scc_stack.pop().unwrap();
                             self.on_stack.remove(&w);
-                            scc.push(w);
+                            scc.push(w.clone());
                             if w == current {
                                 break;
                             }
@@ -167,14 +167,15 @@ where
                 loop {
                     let node = self.nodes.next()?;
                     if !self.index.contains_key(&node) {
-                        self.index.insert(node, self.index_counter);
-                        self.lowlink.insert(node, self.index_counter);
+                        self.index.insert(node.clone(), self.index_counter);
+                        self.lowlink.insert(node.clone(), self.index_counter);
                         self.index_counter += 1;
-                        self.scc_stack.push(node);
-                        self.on_stack.insert(node);
+                        self.scc_stack.push(node.clone());
+                        self.on_stack.insert(node.clone());
 
                         let succs: Vec<G::NodeIx> =
-                            unsafe { self.graph.neighbor_indices_from_unchecked(node) }.collect();
+                            unsafe { self.graph.neighbor_indices_from_unchecked(node.clone()) }
+                                .collect();
                         self.dfs_stack.push((node, succs, 0));
                         break;
                     }
@@ -206,25 +207,25 @@ where
     let mut visited = HashSet::new();
     let mut finish_order = Vec::new();
 
-    for node in <_ as crate::graph::GraphOperation<'_>>::node_indices(graph) {
+    for node in super::owned_node_indices(graph) {
         if visited.contains(&node) {
             continue;
         }
-        let mut stack: Vec<(G::NodeIx, bool)> = vec![(node, false)];
+        let mut stack: Vec<(G::NodeIx, bool)> = vec![(node.clone(), false)];
         visited.insert(node);
 
         while let Some((current, expanded)) = stack.last_mut() {
             if *expanded {
-                finish_order.push(*current);
+                finish_order.push(current.clone());
                 stack.pop();
             } else {
                 *expanded = true;
-                let current = *current;
+                let current = current.clone();
                 // SAFETY: `current` is an in-graph index and `G: StableNode`.
                 let succs: Vec<G::NodeIx> =
                     unsafe { graph.neighbor_indices_from_unchecked(current) }.collect();
                 for succ in succs.into_iter().rev() {
-                    if visited.insert(succ) {
+                    if visited.insert(succ.clone()) {
                         stack.push((succ, false));
                     }
                 }
@@ -252,7 +253,7 @@ where
     fn next(&mut self) -> Option<Vec<G::NodeIx>> {
         // Phase 2: find next unassigned node in reverse finish order
         while self.finish_idx < self.finish_order.len() {
-            let node = self.finish_order[self.finish_idx];
+            let node = self.finish_order[self.finish_idx].clone();
             self.finish_idx += 1;
 
             if self.assigned.contains(&node) {
@@ -261,15 +262,15 @@ where
 
             // DFS on reverse graph using predecessors
             let mut scc = Vec::new();
-            let mut stack = vec![node];
+            let mut stack = vec![node.clone()];
             self.assigned.insert(node);
 
             while let Some(current) = stack.pop() {
-                scc.push(current);
+                scc.push(current.clone());
                 let preds: Vec<G::NodeIx> =
                     unsafe { self.graph.neighbor_indices_to_unchecked(current) }.collect();
                 for pred in preds {
-                    if self.assigned.insert(pred) {
+                    if self.assigned.insert(pred.clone()) {
                         stack.push(pred);
                     }
                 }
@@ -308,8 +309,8 @@ where
     // rules out mutation. Uses only the bound-free raw `GraphOperation`
     // primitives (`node_indices` / `walks_of_unchecked`), so it stays
     // available on any graph without a `StableNode` bound.
-    for node in <_ as crate::graph::GraphOperation<'_>>::node_indices(graph) {
-        if !visited.insert(node) {
+    for node in super::owned_node_indices(graph) {
+        if !visited.insert(node.clone()) {
             continue;
         }
         count += 1;
@@ -323,7 +324,7 @@ where
                 // Only the neighbor index is needed; take it from the raw parts
                 // (no edge deref, so no `G::Edge: '_` bound).
                 let neighbor = wi.into_parts().2;
-                if visited.insert(neighbor) {
+                if visited.insert(neighbor.clone()) {
                     stack.push(neighbor);
                 }
             }
@@ -344,7 +345,7 @@ where
     >,
 {
     // `Bfs::new` validates `source`; `graph.node` validates `target`.
-    assert!(Graph::contains_node_index(graph, target));
+    assert!(Graph::contains_node_index(graph, &target));
     if source == target {
         return true;
     }
@@ -396,7 +397,7 @@ where
     // Map original node -> SCC index
     let mut node_to_scc: HashMap<G::NodeIx, usize> = HashMap::new();
     for (scc_idx, scc) in sccs.iter().enumerate() {
-        for &node in scc {
+        for node in scc.iter().cloned() {
             node_to_scc.insert(node, scc_idx);
         }
     }
@@ -417,8 +418,8 @@ where
     // safe `edge_tail_index` / `edge_head_index` (panic on invalid index).
     let mut seen_edges: HashSet<(usize, usize)> = HashSet::new();
     // SAFETY: edge indices are not exposed to caller
-    for eix in <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph) {
-        let tail = graph.edge_tail_index(eix);
+    for eix in super::owned_edge_indices(graph) {
+        let tail = graph.edge_tail_index(eix.clone());
         let head = graph.edge_head_index(eix);
         let scc_tail = node_to_scc[&tail];
         let scc_head = node_to_scc[&head];

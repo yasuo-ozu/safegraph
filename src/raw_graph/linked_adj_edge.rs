@@ -20,6 +20,7 @@
 //! `(N, NodeRepr<u32>)`; for Map-backed maps the entries are `(N,
 //! NodeRepr<Option<I>>)` with `N` as the key.
 
+use crate::collection::IndexKey;
 use crate::unwrap_unchecked;
 use core::marker::PhantomData;
 use std::fmt::{Debug, Display};
@@ -104,18 +105,18 @@ impl<'a, NIx, EC, ESlot, const IS_INCOMING: bool> Iterator
     for EdgeIndicesDirected<'a, NIx, EC, ESlot, IS_INCOMING>
 where
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NIx, ESlot>>,
-    ESlot: Copy + Eq + Hash + 'a,
-    NIx: Copy + Eq + 'a,
+    ESlot: Clone + Eq + Hash + 'a,
+    NIx: Clone + Eq + 'a,
 {
     type Item = EC::Index;
 
     fn next(&mut self) -> Option<EC::Index> {
-        let eix = EC::from_slot(self.next)?;
+        let eix = EC::from_slot(core::mem::replace(&mut self.next, EC::sentinel()))?;
         // SAFETY: `eix` came from an in-graph adjacency list.
         let storage = unsafe { self.edges.get_storage_unchecked(&eix) };
         #[cfg(debug_assertions)]
         debug_assert!(storage.node[IS_INCOMING as usize] == self.node_key);
-        self.next = storage.next[IS_INCOMING as usize];
+        self.next = storage.next[IS_INCOMING as usize].clone();
         Some(eix)
     }
 }
@@ -132,25 +133,27 @@ pub struct EdgeIndicesOf<'a, NIx, EC, ESlot> {
 impl<'a, NIx, EC, ESlot> Iterator for EdgeIndicesOf<'a, NIx, EC, ESlot>
 where
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NIx, ESlot>>,
-    ESlot: Copy + Eq + Hash + 'a,
-    NIx: Copy + Eq + 'a,
+    ESlot: Clone + Eq + Hash + 'a,
+    NIx: Clone + Eq + 'a,
 {
     type Item = EC::Index;
 
     fn next(&mut self) -> Option<EC::Index> {
-        if let Some(eix) = EC::from_slot(self.outgoing_next) {
+        if let Some(eix) =
+            EC::from_slot(core::mem::replace(&mut self.outgoing_next, EC::sentinel()))
+        {
             // SAFETY: from in-graph adjacency list.
             let storage = unsafe { self.edges.get_storage_unchecked(&eix) };
-            self.outgoing_next = storage.next[OUTGOING];
+            self.outgoing_next = storage.next[OUTGOING].clone();
             #[cfg(debug_assertions)]
             debug_assert!(storage.node[OUTGOING] == self.node_key);
             return Some(eix);
         }
         loop {
-            let eix = EC::from_slot(self.incoming_next)?;
+            let eix = EC::from_slot(core::mem::replace(&mut self.incoming_next, EC::sentinel()))?;
             // SAFETY: from in-graph adjacency list.
             let storage = unsafe { self.edges.get_storage_unchecked(&eix) };
-            self.incoming_next = storage.next[INCOMING];
+            self.incoming_next = storage.next[INCOMING].clone();
             debug_assert!(storage.node[INCOMING] == self.node_key);
             // Skip self-loops — already yielded by outgoing pass.
             if storage.node[OUTGOING] != self.node_key {
@@ -178,24 +181,24 @@ impl<'r, NIx, EC, ESlot, const IS_INCOMING: bool> Iterator
 where
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NIx, ESlot>>,
     EC::Value: 'r,
-    ESlot: Copy + Eq + Hash + 'r,
-    NIx: Copy + Eq + 'r,
+    ESlot: Clone + Eq + Hash + 'r,
+    NIx: Clone + Eq + 'r,
 {
     type Item = WalkItem<'r, EC::Index, EC::Value, NIx>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let eix = EC::from_slot(self.next)?;
+        let eix = EC::from_slot(core::mem::replace(&mut self.next, EC::sentinel()))?;
         // self.edges: &'r EC (Copy). Passing it preserves 'r in the &self
         // parameter of the trait method, so the returned references are 'r.
         // SAFETY: `eix` came from an in-graph adjacency list.
         let (edge, storage) = unsafe { self.edges.get_both_unchecked(&eix) };
-        self.next = storage.next[IS_INCOMING as usize];
+        self.next = storage.next[IS_INCOMING as usize].clone();
         #[cfg(debug_assertions)]
         debug_assert!(storage.node[IS_INCOMING as usize] == self.node_key);
         Some(WalkItem::new(
             eix,
             edge,
-            storage.node[(!IS_INCOMING) as usize],
+            storage.node[(!IS_INCOMING) as usize].clone(),
         ))
     }
 }
@@ -207,13 +210,13 @@ impl<'r, NIx, EC, ESlot, const IS_INCOMING: bool> Iterator
 where
     EC: UpdatableRandomAccess<Slot = ESlot, Storage = EdgeRepr<NIx, ESlot>>,
     EC::Value: 'r,
-    ESlot: Copy + Eq + Hash + 'r,
-    NIx: Copy + Eq + 'r,
+    ESlot: Clone + Eq + Hash + 'r,
+    NIx: Clone + Eq + 'r,
 {
     type Item = WalkItemMut<'r, EC::Index, EC::Value, NIx>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let eix = EC::from_slot(self.next)?;
+        let eix = EC::from_slot(core::mem::replace(&mut self.next, EC::sentinel()))?;
         // SAFETY: each next() yields a distinct EIx (graph walks visit each
         // edge at most once), so the &'r mut references we hand out never
         // alias. We use raw pointers to escape the per-call &mut self borrow
@@ -224,8 +227,8 @@ where
             let opp;
             {
                 let storage = self.edges.get_storage_unchecked(&eix);
-                next_slot = storage.next[IS_INCOMING as usize];
-                opp = storage.node[(!IS_INCOMING) as usize];
+                next_slot = storage.next[IS_INCOMING as usize].clone();
+                opp = storage.node[(!IS_INCOMING) as usize].clone();
                 #[cfg(debug_assertions)]
                 debug_assert!(storage.node[IS_INCOMING as usize] == self.node_key);
             }
@@ -253,27 +256,29 @@ impl<'r, NIx, EC, ESlot> Iterator for WalksOf<NIx, &'r EC, ESlot>
 where
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NIx, ESlot>>,
     EC::Value: 'r,
-    ESlot: Copy + Eq + Hash + 'r,
-    NIx: Copy + Eq + 'r,
+    ESlot: Clone + Eq + Hash + 'r,
+    NIx: Clone + Eq + 'r,
 {
     type Item = WalkItem<'r, EC::Index, EC::Value, NIx>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(eix) = EC::from_slot(self.outgoing_next) {
+        if let Some(eix) =
+            EC::from_slot(core::mem::replace(&mut self.outgoing_next, EC::sentinel()))
+        {
             // SAFETY: from in-graph adjacency list.
             let (edge, storage) = unsafe { self.edges.get_both_unchecked(&eix) };
-            self.outgoing_next = storage.next[OUTGOING];
+            self.outgoing_next = storage.next[OUTGOING].clone();
             debug_assert!(storage.node[OUTGOING] == self.node_key);
-            return Some(WalkItem::new(eix, edge, storage.node[INCOMING]));
+            return Some(WalkItem::new(eix, edge, storage.node[INCOMING].clone()));
         }
         loop {
-            let eix = EC::from_slot(self.incoming_next)?;
+            let eix = EC::from_slot(core::mem::replace(&mut self.incoming_next, EC::sentinel()))?;
             // SAFETY: from in-graph adjacency list.
             let (edge, storage) = unsafe { self.edges.get_both_unchecked(&eix) };
-            self.incoming_next = storage.next[INCOMING];
+            self.incoming_next = storage.next[INCOMING].clone();
             debug_assert!(storage.node[INCOMING] == self.node_key);
             if storage.node[OUTGOING] != self.node_key {
-                return Some(WalkItem::new(eix, edge, storage.node[OUTGOING]));
+                return Some(WalkItem::new(eix, edge, storage.node[OUTGOING].clone()));
             }
         }
     }
@@ -285,8 +290,8 @@ impl<'r, NIx, EC, ESlot> Iterator for WalksOf<NIx, &'r mut EC, ESlot>
 where
     EC: UpdatableRandomAccess<Slot = ESlot, Storage = EdgeRepr<NIx, ESlot>>,
     EC::Value: 'r,
-    ESlot: Copy + Eq + Hash + 'r,
-    NIx: Copy + Eq + 'r,
+    ESlot: Clone + Eq + Hash + 'r,
+    NIx: Clone + Eq + 'r,
 {
     type Item = WalkItemMut<'r, EC::Index, EC::Value, NIx>;
 
@@ -295,12 +300,14 @@ where
         // pointer used to extend lifetime to 'r.
         unsafe {
             // Outgoing first.
-            if let Some(eix) = EC::from_slot(self.outgoing_next) {
+            if let Some(eix) =
+                EC::from_slot(core::mem::replace(&mut self.outgoing_next, EC::sentinel()))
+            {
                 let (next_slot, opp);
                 {
                     let storage = self.edges.get_storage_unchecked(&eix);
-                    next_slot = storage.next[OUTGOING];
-                    opp = storage.node[INCOMING];
+                    next_slot = storage.next[OUTGOING].clone();
+                    opp = storage.node[INCOMING].clone();
                     debug_assert!(storage.node[OUTGOING] == self.node_key);
                 }
                 self.outgoing_next = next_slot;
@@ -309,13 +316,14 @@ where
                 return Some(WalkItemMut::new(eix, edge, opp));
             }
             loop {
-                let eix = EC::from_slot(self.incoming_next)?;
+                let eix =
+                    EC::from_slot(core::mem::replace(&mut self.incoming_next, EC::sentinel()))?;
                 let (next_slot, target_out, target_in);
                 {
                     let storage = self.edges.get_storage_unchecked(&eix);
-                    next_slot = storage.next[INCOMING];
-                    target_out = storage.node[OUTGOING];
-                    target_in = storage.node[INCOMING];
+                    next_slot = storage.next[INCOMING].clone();
+                    target_out = storage.node[OUTGOING].clone();
+                    target_in = storage.node[INCOMING].clone();
                     debug_assert!(target_in == self.node_key);
                 }
                 self.incoming_next = next_slot;
@@ -334,7 +342,7 @@ impl<NC, EC, ESlot> GraphProperty for LinkedAdjEdgeGraph<NC, EC>
 where
     NC: RandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
@@ -352,14 +360,14 @@ where
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>> + 'r,
     for<'a> NC: RandomAccessRef<'a>,
     for<'a> EC: RandomAccessRef<'a>,
-    ESlot: Copy + Eq + Hash + 'r,
+    ESlot: Clone + Eq + Hash + 'r,
     NC::Index: Display + Debug + 'r,
     EC::Index: Display + Debug,
     NC::Value: 'r,
     EC::Value: 'r,
 {
-    fn contains_node_index(&self, node_ix: Self::NodeIx) -> bool {
-        self.nodes.contains_index(&node_ix)
+    fn contains_node_index(&self, node_ix: &Self::NodeIx) -> bool {
+        self.nodes.contains_index(node_ix)
     }
     fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool {
         self.edges.contains_index(&edge_ix)
@@ -379,39 +387,41 @@ where
         Collection::capacity(&self.edges)
     }
 
-    type NodeIndices = <NC as RandomAccessRef<'r>>::Indices;
-    type EdgeIndices = <EC as RandomAccessRef<'r>>::Indices;
+    type NodeIxRef = <NC as RandomAccessRef<'r>>::IndexRef;
+    type NodeIndices = <NC as RandomAccessRef<'r>>::IndexRefs;
+    type EdgeIxRef = <EC as RandomAccessRef<'r>>::IndexRef;
+    type EdgeIndices = <EC as RandomAccessRef<'r>>::IndexRefs;
 
     fn node_indices(&'r self) -> Self::NodeIndices {
-        self.nodes.indices()
+        self.nodes.index_refs()
     }
     fn edge_indices(&'r self) -> Self::EdgeIndices {
-        self.edges.indices()
+        self.edges.index_refs()
     }
 
-    unsafe fn node_unchecked(&self, node_ix: Self::NodeIx) -> &Self::Node {
-        unsafe { self.nodes.get_value_unchecked(&node_ix) }
+    unsafe fn node_unchecked(&self, node_ix: &Self::NodeIx) -> &Self::Node {
+        unsafe { self.nodes.get_value_unchecked(node_ix) }
     }
-    unsafe fn edge_unchecked(&self, edge_ix: Self::EdgeIx) -> &Self::Edge {
-        unsafe { self.edges.get_value_unchecked(&edge_ix) }
+    unsafe fn edge_unchecked(&self, edge_ix: &Self::EdgeIx) -> &Self::Edge {
+        unsafe { self.edges.get_value_unchecked(edge_ix) }
     }
     unsafe fn endpoints_unchecked(&self, edge_ix: Self::EdgeIx) -> Self::Endpoints {
         let storage = unsafe { self.edges.get_storage_unchecked(&edge_ix) };
-        storage.node
+        storage.node.clone()
     }
 
     type EdgeIndicesFrom = EdgeIndicesDirected<'r, NC::Index, EC, ESlot, false>;
 
     unsafe fn edge_indices_from_unchecked(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: &Self::NodeIx,
     ) -> Self::EdgeIndicesFrom {
-        let head_slot = unsafe { self.nodes.get_storage_unchecked(&node_ix) }.next[OUTGOING];
+        let head_slot = unsafe { self.nodes.get_storage_unchecked(node_ix) }.next[OUTGOING].clone();
         EdgeIndicesDirected {
             edges: &self.edges,
             next: head_slot,
             #[cfg(debug_assertions)]
-            node_key: node_ix,
+            node_key: node_ix.clone(),
             _marker: PhantomData,
         }
     }
@@ -422,8 +432,8 @@ where
         let node_storage = unsafe { self.nodes.get_storage_unchecked(&node_ix) };
         EdgeIndicesOf {
             edges: &self.edges,
-            outgoing_next: node_storage.next[OUTGOING],
-            incoming_next: node_storage.next[INCOMING],
+            outgoing_next: node_storage.next[OUTGOING].clone(),
+            incoming_next: node_storage.next[INCOMING].clone(),
             node_key: node_ix,
         }
     }
@@ -431,7 +441,8 @@ where
     type WalksFrom = WalksDirected<NC::Index, &'r EC, ESlot, false>;
 
     unsafe fn walks_from_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksFrom {
-        let head_slot = unsafe { self.nodes.get_storage_unchecked(&node_ix) }.next[OUTGOING];
+        let head_slot =
+            unsafe { self.nodes.get_storage_unchecked(&node_ix) }.next[OUTGOING].clone();
         WalksDirected {
             edges: &self.edges,
             next: head_slot,
@@ -448,8 +459,8 @@ where
         WalksOf {
             edges: &self.edges,
             node_key: node_ix,
-            outgoing_next: node_storage.next[OUTGOING],
-            incoming_next: node_storage.next[INCOMING],
+            outgoing_next: node_storage.next[OUTGOING].clone(),
+            incoming_next: node_storage.next[INCOMING].clone(),
         }
     }
 
@@ -482,7 +493,7 @@ impl<NC, EC, ESlot> Bigraph for LinkedAdjEdgeGraph<NC, EC>
 where
     NC: RandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
@@ -499,7 +510,7 @@ where
     NC: RandomAccess<Storage = NodeRepr<ESlot>>
         + InsertableCollection<InsertedIndex = <NC as RandomAccess>::Index>,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
@@ -509,7 +520,7 @@ where
     ) -> Result<Self::NodeIx, Self::Node> {
         let sentinel = EC::sentinel();
         let storage = NodeRepr {
-            next: [sentinel, sentinel],
+            next: [sentinel.clone(), sentinel],
         };
         self.nodes.insert(node, storage).map_err(|(v, _)| v)
     }
@@ -520,7 +531,7 @@ where
     NC: RandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>
         + InsertableCollection<InsertedIndex = <EC as RandomAccess>::Index>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
@@ -530,18 +541,18 @@ where
         endpoints: Self::Endpoints,
     ) -> Result<Self::EdgeIx, Self::Edge> {
         let [from, to] = endpoints;
-        let old_out = unsafe { self.nodes.get_storage_unchecked(&from) }.next[OUTGOING];
-        let old_in = unsafe { self.nodes.get_storage_unchecked(&to) }.next[INCOMING];
+        let old_out = unsafe { self.nodes.get_storage_unchecked(&from) }.next[OUTGOING].clone();
+        let old_in = unsafe { self.nodes.get_storage_unchecked(&to) }.next[INCOMING].clone();
         let edge_storage = EdgeRepr {
             next: [old_out, old_in],
-            node: [from, to],
+            node: [from.clone(), to.clone()],
         };
         let eix = match self.edges.insert(edge, edge_storage) {
             Ok(eix) => eix,
             Err((e, _)) => return Err(e),
         };
-        let new_slot = EC::to_slot(eix);
-        unsafe { self.nodes.get_storage_unchecked_mut(&from) }.next[OUTGOING] = new_slot;
+        let new_slot = EC::to_slot(eix.clone());
+        unsafe { self.nodes.get_storage_unchecked_mut(&from) }.next[OUTGOING] = new_slot.clone();
         unsafe { self.nodes.get_storage_unchecked_mut(&to) }.next[INCOMING] = new_slot;
         Ok(eix)
     }
@@ -551,7 +562,7 @@ impl<'r, NC, EC, ESlot> UpdateNode<'r> for LinkedAdjEdgeGraph<NC, EC>
 where
     NC: UpdatableRandomAccess<Storage = NodeRepr<ESlot>> + 'r,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>> + 'r,
-    ESlot: Copy + Eq + Hash + 'r,
+    ESlot: Clone + Eq + Hash + 'r,
     NC::Index: Display + Debug + 'r,
     EC::Index: Display + Debug + 'r,
     EC::Value: 'r,
@@ -575,7 +586,7 @@ impl<NC, EC, ESlot> UpdateEdge for LinkedAdjEdgeGraph<NC, EC>
 where
     NC: RandomAccess<Storage = NodeRepr<ESlot>>,
     EC: UpdatableRandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
@@ -590,7 +601,7 @@ where
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>> + 'r,
     for<'a> NC: RandomAccessRef<'a>,
     for<'a> EC: RandomAccessRef<'a>,
-    ESlot: Copy + Eq + Hash + 'r,
+    ESlot: Clone + Eq + Hash + 'r,
     NC::Index: Display + Debug + 'r,
     EC::Index: Display + Debug,
     NC::Value: 'r,
@@ -607,7 +618,8 @@ where
     >;
 
     unsafe fn walks_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksTo {
-        let head_slot = unsafe { self.nodes.get_storage_unchecked(&node_ix) }.next[INCOMING];
+        let head_slot =
+            unsafe { self.nodes.get_storage_unchecked(&node_ix) }.next[INCOMING].clone();
         let walks: WalksDirected<NC::Index, &'r EC, ESlot, true> = WalksDirected {
             edges: &self.edges,
             next: head_slot,
@@ -630,7 +642,8 @@ where
     }
 
     unsafe fn edge_indices_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesTo {
-        let head_slot = unsafe { self.nodes.get_storage_unchecked(&node_ix) }.next[INCOMING];
+        let head_slot =
+            unsafe { self.nodes.get_storage_unchecked(&node_ix) }.next[INCOMING].clone();
         EdgeIndicesDirected {
             edges: &self.edges,
             next: head_slot,
@@ -645,7 +658,7 @@ where
         edge_ix: Self::EdgeIx,
     ) -> Self::EdgeTailIndices {
         let storage = unsafe { self.edges.get_storage_unchecked(&edge_ix) };
-        core::iter::once(storage.node[OUTGOING])
+        core::iter::once(storage.node[OUTGOING].clone())
     }
 
     unsafe fn edge_head_indices_unchecked(
@@ -653,37 +666,49 @@ where
         edge_ix: Self::EdgeIx,
     ) -> Self::EdgeHeadIndices {
         let storage = unsafe { self.edges.get_storage_unchecked(&edge_ix) };
-        core::iter::once(storage.node[INCOMING])
+        core::iter::once(storage.node[INCOMING].clone())
     }
 }
 
-/// Walk the linked list at `(node_ix, dir)` and replace any pointer to `target`
+/// Walk the linked list at `(node_ix, dir)` and replace the pointer to `target`
 /// with `replacement`.
 ///
+/// The walk compares through shared borrows and clones only the predecessor
+/// whose pointer is rewritten, so `String`-like keys are not cloned per hop.
+///
 /// # Safety
-/// `node_ix` must be valid and `nodes`/`edges` must be the same collections.
+/// `node_ix` must be valid, `target` must be linked into its `dir` chain, and
+/// `nodes`/`edges` must be the same collections.
 unsafe fn replace_in_list<NC, EC, ESlot>(
     nodes: &mut NC,
     edges: &mut EC,
-    node_ix: NC::Index,
-    target: EC::Index,
+    node_ix: &NC::Index,
+    target: &EC::Index,
     replacement: ESlot,
     dir: usize,
 ) where
     NC: RandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
 {
-    let mut cur = &mut unsafe { nodes.get_storage_unchecked_mut(&node_ix) }.next[dir];
-    loop {
-        debug_assert!(EC::from_slot(*cur).is_some());
-        let unwrapped = unwrap_unchecked(EC::from_slot(*cur));
-        if unwrapped == target {
-            break;
+    // `None` is the node's head pointer, `Some(e)` is edge `e`'s `next[dir]`.
+    let pred: Option<EC::Index> = {
+        let mut pred: Option<&EC::Index> = None;
+        let mut cur = &unsafe { nodes.get_storage_unchecked(node_ix) }.next[dir];
+        loop {
+            debug_assert!(EC::from_slot_ref(cur).is_some());
+            let ix = unwrap_unchecked(EC::from_slot_ref(cur));
+            if ix == target {
+                break pred.cloned();
+            }
+            pred = Some(ix);
+            cur = &unsafe { edges.get_storage_unchecked(ix) }.next[dir];
         }
-        cur = &mut unsafe { edges.get_storage_unchecked_mut(&unwrapped) }.next[dir];
+    };
+    match pred {
+        None => unsafe { nodes.get_storage_unchecked_mut(node_ix) }.next[dir] = replacement,
+        Some(p) => unsafe { edges.get_storage_unchecked_mut(&p) }.next[dir] = replacement,
     }
-    *cur = replacement;
 }
 
 /// Remove `node_ix` after all incident edges have been removed. If the backend
@@ -700,7 +725,7 @@ unsafe fn remove_node_inner<NC, EC, ESlot>(
 where
     NC: RemovableRandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
 {
     let (data, _storage, swapped) = unsafe { nodes.take_unchecked(&node_ix) };
 
@@ -708,12 +733,12 @@ where
         // The entry at `old_last` was moved to `node_ix`. Re-write every
         // incident edge's endpoint to the new key.
         for dir in [OUTGOING, INCOMING] {
-            let head_slot = unsafe { nodes.get_storage_unchecked(&node_ix) }.next[dir];
+            let head_slot = unsafe { nodes.get_storage_unchecked(&node_ix) }.next[dir].clone();
             let mut cur = EC::from_slot(head_slot);
             while let Some(eix) = cur {
                 let s = unsafe { edges.get_storage_unchecked_mut(&eix) };
-                s.node[dir] = node_ix;
-                let next_slot = s.next[dir];
+                s.node[dir] = node_ix.clone();
+                let next_slot = s.next[dir].clone();
                 cur = EC::from_slot(next_slot);
             }
         }
@@ -745,23 +770,23 @@ unsafe fn unlink_dying_edges<NC, EC, ESlot>(
 ) where
     NC: RandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
 {
     // `pred` identifies the pointer that may need rewriting: `None` is the
     // node's head pointer, `Some(e)` is edge `e`'s `next[dir]`.
     let mut pred: Option<EC::Index> = None;
     while expected > 0 {
-        let cur_slot = match pred {
-            None => unsafe { nodes.get_storage_unchecked(&node_ix) }.next[dir],
-            Some(p) => unsafe { edges.get_storage_unchecked(&p) }.next[dir],
+        let cur_slot = match &pred {
+            None => unsafe { nodes.get_storage_unchecked(&node_ix) }.next[dir].clone(),
+            Some(p) => unsafe { edges.get_storage_unchecked(p) }.next[dir].clone(),
         };
-        debug_assert!(EC::from_slot(cur_slot).is_some());
+        debug_assert!(EC::from_slot(cur_slot.clone()).is_some());
         let eix = unwrap_unchecked(EC::from_slot(cur_slot));
         if dying.contains(&eix) {
-            let next = unsafe { edges.get_storage_unchecked(&eix) }.next[dir];
-            match pred {
+            let next = unsafe { edges.get_storage_unchecked(&eix) }.next[dir].clone();
+            match &pred {
                 None => unsafe { nodes.get_storage_unchecked_mut(&node_ix) }.next[dir] = next,
-                Some(p) => unsafe { edges.get_storage_unchecked_mut(&p) }.next[dir] = next,
+                Some(p) => unsafe { edges.get_storage_unchecked_mut(p) }.next[dir] = next,
             }
             expected -= 1;
         } else {
@@ -793,23 +818,27 @@ unsafe fn patch_moved_edges<NC, EC, ESlot>(
 ) where
     NC: RandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
 {
     let mut pred: Option<EC::Index> = None;
     while expected > 0 {
-        let mut cur_slot = match pred {
-            None => unsafe { nodes.get_storage_unchecked(&node_ix) }.next[dir],
-            Some(p) => unsafe { edges.get_storage_unchecked(&p) }.next[dir],
+        let mut cur_slot = match &pred {
+            None => unsafe { nodes.get_storage_unchecked(&node_ix) }.next[dir].clone(),
+            Some(p) => unsafe { edges.get_storage_unchecked(p) }.next[dir].clone(),
         };
-        if let Some(&current) = moved.get(&cur_slot) {
-            match pred {
-                None => unsafe { nodes.get_storage_unchecked_mut(&node_ix) }.next[dir] = current,
-                Some(p) => unsafe { edges.get_storage_unchecked_mut(&p) }.next[dir] = current,
+        if let Some(current) = moved.get(&cur_slot).cloned() {
+            match &pred {
+                None => {
+                    unsafe { nodes.get_storage_unchecked_mut(&node_ix) }.next[dir] = current.clone()
+                }
+                Some(p) => {
+                    unsafe { edges.get_storage_unchecked_mut(p) }.next[dir] = current.clone()
+                }
             }
             cur_slot = current;
             expected -= 1;
         }
-        debug_assert!(EC::from_slot(cur_slot).is_some());
+        debug_assert!(EC::from_slot(cur_slot.clone()).is_some());
         let eix = unwrap_unchecked(EC::from_slot(cur_slot));
         pred = Some(eix);
     }
@@ -819,30 +848,30 @@ impl<NC, EC, ESlot> RemoveEdge for LinkedAdjEdgeGraph<NC, EC>
 where
     NC: RandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RemovableRandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
     unsafe fn take_edge_unchecked(&mut self, edge_ix: Self::EdgeIx) -> Self::Edge {
         let storage = unsafe { self.edges.get_storage_unchecked(&edge_ix) };
-        let [from_node, to_node] = storage.node;
-        let next_out_slot = storage.next[OUTGOING];
-        let next_in_slot = storage.next[INCOMING];
+        let [from_node, to_node] = storage.node.clone();
+        let next_out_slot = storage.next[OUTGOING].clone();
+        let next_in_slot = storage.next[INCOMING].clone();
 
         unsafe {
             replace_in_list(
                 &mut self.nodes,
                 &mut self.edges,
-                from_node,
-                edge_ix,
+                &from_node,
+                &edge_ix,
                 next_out_slot,
                 OUTGOING,
             );
             replace_in_list(
                 &mut self.nodes,
                 &mut self.edges,
-                to_node,
-                edge_ix,
+                &to_node,
+                &edge_ix,
                 next_in_slot,
                 INCOMING,
             );
@@ -854,22 +883,22 @@ where
             // The entry at `old_last` was moved to `edge_ix`. Re-link adjacency
             // pointers that referenced `old_last`.
             let moved_storage = unsafe { self.edges.get_storage_unchecked(&edge_ix) };
-            let moved_endpoints = moved_storage.node;
+            let [moved_tail, moved_head] = moved_storage.node.clone();
             let new_slot = EC::to_slot(edge_ix);
             unsafe {
                 replace_in_list(
                     &mut self.nodes,
                     &mut self.edges,
-                    moved_endpoints[OUTGOING],
-                    old_last,
-                    new_slot,
+                    &moved_tail,
+                    &old_last,
+                    new_slot.clone(),
                     OUTGOING,
                 );
                 replace_in_list(
                     &mut self.nodes,
                     &mut self.edges,
-                    moved_endpoints[INCOMING],
-                    old_last,
+                    &moved_head,
+                    &old_last,
                     new_slot,
                     INCOMING,
                 );
@@ -884,7 +913,7 @@ impl<NC, EC, ESlot> RemoveNode for LinkedAdjEdgeGraph<NC, EC>
 where
     NC: RemovableRandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RemovableRandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
@@ -896,12 +925,16 @@ where
         // replace_in_list), so the incoming pass sees no self-loops.
         for dir in [OUTGOING, INCOMING] {
             let other = 1 - dir;
-            while let Some(eix) =
-                EC::from_slot(unsafe { self.nodes.get_storage_unchecked(&node_ix) }.next[dir])
-            {
+            while let Some(eix) = EC::from_slot(
+                unsafe { self.nodes.get_storage_unchecked(&node_ix) }.next[dir].clone(),
+            ) {
                 let (peer, next_this, next_other) = {
                     let s = unsafe { self.edges.get_storage_unchecked(&eix) };
-                    (s.node[other], s.next[dir], s.next[other])
+                    (
+                        s.node[other].clone(),
+                        s.next[dir].clone(),
+                        s.next[other].clone(),
+                    )
                 };
                 // eix is the head — advance directly.
                 unsafe { self.nodes.get_storage_unchecked_mut(&node_ix) }.next[dir] = next_this;
@@ -912,33 +945,33 @@ where
                     replace_in_list(
                         &mut self.nodes,
                         &mut self.edges,
-                        peer,
-                        eix,
+                        &peer,
+                        &eix,
                         next_other,
                         other,
                     )
                 };
                 let (_, _, swapped) = unsafe { self.edges.take_unchecked(&eix) };
                 if let Some(old_last) = swapped {
-                    let new_slot = EC::to_slot(eix);
+                    let new_slot = EC::to_slot(eix.clone());
                     let (m_out, m_in) = {
                         let s = unsafe { self.edges.get_storage_unchecked(&eix) };
-                        (s.node[OUTGOING], s.node[INCOMING])
+                        (s.node[OUTGOING].clone(), s.node[INCOMING].clone())
                     };
                     unsafe {
                         replace_in_list(
                             &mut self.nodes,
                             &mut self.edges,
-                            m_out,
-                            old_last,
-                            new_slot,
+                            &m_out,
+                            &old_last,
+                            new_slot.clone(),
                             OUTGOING,
                         );
                         replace_in_list(
                             &mut self.nodes,
                             &mut self.edges,
-                            m_in,
-                            old_last,
+                            &m_in,
+                            &old_last,
                             new_slot,
                             INCOMING,
                         );
@@ -1045,7 +1078,7 @@ where
 
         // Nodes removed in phase 5. Edges incident on any of these need no
         // adjacency maintenance — the whole chain dies with the node.
-        let removed_nodes: HashSet<NC::Index> = explicit_nodes.iter().copied().collect();
+        let removed_nodes: HashSet<NC::Index> = explicit_nodes.iter().cloned().collect();
         debug_assert_eq!(
             removed_nodes.len(),
             node_result_len,
@@ -1056,8 +1089,8 @@ where
         // do not appear in the map and skip the slot write.
         let mut edge_output_slot: HashMap<EC::Index, usize> =
             HashMap::with_capacity(edge_result_len);
-        for (i, &eix) in explicit_edges.iter().enumerate() {
-            edge_output_slot.entry(eix).or_insert(i);
+        for (i, eix) in explicit_edges.iter().enumerate() {
+            edge_output_slot.entry(eix.clone()).or_insert(i);
         }
         debug_assert_eq!(
             edge_output_slot.len(),
@@ -1070,21 +1103,21 @@ where
         // the caller also listed explicitly.
         let mut dying_edges: HashSet<EC::Index> = HashSet::with_capacity(edge_result_len);
         let mut all_edges: Vec<EC::Index> = Vec::with_capacity(edge_result_len);
-        for &eix in &explicit_edges {
-            if dying_edges.insert(eix) {
-                all_edges.push(eix);
+        for eix in &explicit_edges {
+            if dying_edges.insert(eix.clone()) {
+                all_edges.push(eix.clone());
             }
         }
-        for &nix in &explicit_nodes {
-            let node_storage = unsafe { self.nodes.get_storage_unchecked(&nix) };
+        for nix in &explicit_nodes {
+            let node_storage = unsafe { self.nodes.get_storage_unchecked(nix) };
             let cascade = EdgeIndicesOf {
                 edges: &self.edges,
-                outgoing_next: node_storage.next[OUTGOING],
-                incoming_next: node_storage.next[INCOMING],
-                node_key: nix,
+                outgoing_next: node_storage.next[OUTGOING].clone(),
+                incoming_next: node_storage.next[INCOMING].clone(),
+                node_key: nix.clone(),
             };
             for eix in cascade {
-                if dying_edges.insert(eix) {
+                if dying_edges.insert(eix.clone()) {
                     all_edges.push(eix);
                 }
             }
@@ -1095,16 +1128,16 @@ where
         // instead of once per dying edge. The per-chain counts let each
         // sweep stop at its last dying link.
         let mut chain_counts: HashMap<(NC::Index, usize), usize> = HashMap::new();
-        for &eix in &all_edges {
-            let storage = unsafe { self.edges.get_storage_unchecked(&eix) };
+        for eix in &all_edges {
+            let storage = unsafe { self.edges.get_storage_unchecked(eix) };
             for dir in [OUTGOING, INCOMING] {
-                let endpoint = storage.node[dir];
+                let endpoint = storage.node[dir].clone();
                 if !removed_nodes.contains(&endpoint) {
                     *chain_counts.entry((endpoint, dir)).or_insert(0) += 1;
                 }
             }
         }
-        for (&(nix, dir), &count) in &chain_counts {
+        for ((nix, dir), count) in chain_counts {
             unsafe {
                 unlink_dying_edges(
                     &mut self.nodes,
@@ -1137,8 +1170,8 @@ where
             let (data, _storage, swapped) = unsafe { self.edges.take_unchecked(&eix) };
             if let Some(old_last) = swapped {
                 let origin = move_origin.remove(&old_last).unwrap_or(old_last);
-                edge_moves.insert(origin, eix);
-                move_origin.insert(eix, origin);
+                edge_moves.insert(origin.clone(), eix.clone());
+                move_origin.insert(eix.clone(), origin);
             }
             if let Some(&slot) = edge_output_slot.get(&eix) {
                 debug_assert!(slot < edge_result_len);
@@ -1155,16 +1188,20 @@ where
         if !edge_moves.is_empty() {
             let moved_slots: HashMap<ESlot, ESlot> = edge_moves
                 .iter()
-                .map(|(&origin, &current)| (EC::to_slot(origin), EC::to_slot(current)))
+                .map(|(origin, current)| {
+                    (EC::to_slot(origin.clone()), EC::to_slot(current.clone()))
+                })
                 .collect();
             let mut stale_counts: HashMap<(NC::Index, usize), usize> = HashMap::new();
-            for &current in edge_moves.values() {
-                let storage = unsafe { self.edges.get_storage_unchecked(&current) };
+            for current in edge_moves.values() {
+                let storage = unsafe { self.edges.get_storage_unchecked(current) };
                 for dir in [OUTGOING, INCOMING] {
-                    *stale_counts.entry((storage.node[dir], dir)).or_insert(0) += 1;
+                    *stale_counts
+                        .entry((storage.node[dir].clone(), dir))
+                        .or_insert(0) += 1;
                 }
             }
-            for (&(nix, dir), &count) in &stale_counts {
+            for ((nix, dir), count) in stale_counts {
                 unsafe {
                     patch_moved_edges(
                         &mut self.nodes,
@@ -1190,7 +1227,7 @@ where
             let (data, _storage, swapped) = unsafe { self.nodes.take_unchecked(&nix) };
             if let Some(old_last) = swapped {
                 let origin = node_move_origin.remove(&old_last).unwrap_or(old_last);
-                node_moves.insert(origin, nix);
+                node_moves.insert(origin.clone(), nix.clone());
                 node_move_origin.insert(nix, origin);
             }
             debug_assert!(slot < node_result_len);
@@ -1200,15 +1237,15 @@ where
         // Phase 6: every edge incident on a relocated node still stores the
         // node's original index; rewrite it by walking the relocated node's
         // two chains once each.
-        for (&origin, &current) in &node_moves {
+        for (origin, current) in &node_moves {
             for dir in [OUTGOING, INCOMING] {
-                let head = unsafe { self.nodes.get_storage_unchecked(&current) }.next[dir];
+                let head = unsafe { self.nodes.get_storage_unchecked(current) }.next[dir].clone();
                 let mut cur = EC::from_slot(head);
                 while let Some(eix) = cur {
                     let s = unsafe { self.edges.get_storage_unchecked_mut(&eix) };
-                    debug_assert!(s.node[dir] == origin);
-                    s.node[dir] = current;
-                    cur = EC::from_slot(s.next[dir]);
+                    debug_assert!(s.node[dir] == *origin);
+                    s.node[dir] = current.clone();
+                    cur = EC::from_slot(s.next[dir].clone());
                 }
             }
         }
@@ -1228,7 +1265,7 @@ unsafe impl<NC, EC, ESlot> StableNode for LinkedAdjEdgeGraph<NC, EC>
 where
     NC: StableCollection + RandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
@@ -1238,7 +1275,7 @@ unsafe impl<NC, EC, ESlot> StableEdge for LinkedAdjEdgeGraph<NC, EC>
 where
     NC: RandomAccess<Storage = NodeRepr<ESlot>>,
     EC: StableCollection + RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
@@ -1248,7 +1285,7 @@ impl<NC, EC, ESlot> UniqueNode for LinkedAdjEdgeGraph<NC, EC>
 where
     NC: StableCollection + CollectionBiject + RandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
     NC::Value: PartialEq,
@@ -1256,7 +1293,7 @@ where
     fn node_index(&self, node: impl Borrow<Self::Node>) -> Option<Self::NodeIx> {
         // SAFETY: CollectionBiject guarantees no two indices map to equal
         // values, so the lookup respects the uniqueness invariant.
-        unsafe { self.nodes.value_to_key_unchecked(node.borrow()) }.copied()
+        unsafe { self.nodes.value_to_key_unchecked(node.borrow()) }.cloned()
     }
 }
 
@@ -1266,13 +1303,13 @@ where
     EC: StableCollection
         + CollectionBiject
         + RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
-    ESlot: Copy + Eq + Hash,
+    ESlot: Clone + Eq + Hash,
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
     EC::Value: PartialEq,
 {
     fn edge_index(&self, edge: impl Borrow<Self::Edge>) -> Option<Self::EdgeIx> {
-        unsafe { self.edges.value_to_key_unchecked(edge.borrow()) }.copied()
+        unsafe { self.edges.value_to_key_unchecked(edge.borrow()) }.cloned()
     }
 }
 
@@ -1320,10 +1357,10 @@ macro_rules! impl_map_backed_graph_map {
                 std::collections::$map<E, EdgeRepr<N, Option<E>>>,
             >
         where
-            N: Copy + Eq + Ord + Hash + Display + Debug,
-            E: Copy + Eq + Ord + Hash + Display + Debug,
-            NewN: Copy + Eq + Ord + Hash + Display + Debug,
-            NewE: Copy + Eq + Ord + Hash + Display + Debug,
+            N: IndexKey + Display + Debug,
+            E: IndexKey + Display + Debug,
+            NewN: IndexKey + Display + Debug,
+            NewE: IndexKey + Display + Debug,
         {
             type Mapped = LinkedAdjEdgeGraph<
                 std::collections::$map<NewN, NodeRepr<Option<NewE>>>,
@@ -1342,16 +1379,16 @@ macro_rules! impl_map_backed_graph_map {
                 // its (possibly many) occurrences in the adjacency structure.
                 let mut edge_remap: HashMap<E, NewE> = HashMap::new();
                 let mut seen_e: HashSet<NewE> = HashSet::new();
-                for &k in self.edges.keys() {
-                    let nk = fn_edge(k);
-                    assert!(seen_e.insert(nk), "fn_edge is not injective");
+                for k in self.edges.keys().cloned() {
+                    let nk = fn_edge(k.clone());
+                    assert!(seen_e.insert(nk.clone()), "fn_edge is not injective");
                     edge_remap.insert(k, nk);
                 }
                 let mut node_remap: HashMap<N, NewN> = HashMap::new();
                 let mut seen_n: HashSet<NewN> = HashSet::new();
-                for &k in self.nodes.keys() {
-                    let nk = fn_node(k);
-                    assert!(seen_n.insert(nk), "fn_node is not injective");
+                for k in self.nodes.keys().cloned() {
+                    let nk = fn_node(k.clone());
+                    assert!(seen_n.insert(nk.clone()), "fn_node is not injective");
                     node_remap.insert(k, nk);
                 }
 
@@ -1359,17 +1396,17 @@ macro_rules! impl_map_backed_graph_map {
                     .nodes
                     .into_iter()
                     .map(|(k, repr)| {
-                        let next = repr.next.map(|s| s.map(|e| edge_remap[&e]));
-                        (node_remap[&k], NodeRepr { next })
+                        let next = repr.next.map(|s| s.map(|e| edge_remap[&e].clone()));
+                        (node_remap[&k].clone(), NodeRepr { next })
                     })
                     .collect();
                 let edges = self
                     .edges
                     .into_iter()
                     .map(|(k, repr)| {
-                        let next = repr.next.map(|s| s.map(|e| edge_remap[&e]));
-                        let node = repr.node.map(|n| node_remap[&n]);
-                        (edge_remap[&k], EdgeRepr { next, node })
+                        let next = repr.next.map(|s| s.map(|e| edge_remap[&e].clone()));
+                        let node = repr.node.map(|n| node_remap[&n].clone());
+                        (edge_remap[&k].clone(), EdgeRepr { next, node })
                     })
                     .collect();
                 LinkedAdjEdgeGraph { nodes, edges }

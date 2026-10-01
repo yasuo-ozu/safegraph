@@ -20,10 +20,55 @@
 //!   map types (their keys are immutable).
 //! - [`CollectionBiject`] — value→index reverse lookup; only `*Map` types.
 
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap, LinkedList};
 use std::hash::Hash;
 
 use crate::unwrap_unchecked;
+
+/// A node/edge index (or map key) whose trait impls the graph's `unsafe` code
+/// may rely on.
+///
+/// Indices are cloned, compared and hashed inside unchecked lookups and
+/// mid-way through mutations, so a misbehaving impl would cause undefined
+/// behaviour rather than a wrong answer.
+///
+/// # Safety
+///
+/// Implementors guarantee that:
+/// - `clone()` returns a value equal (`==`) to `self`;
+/// - `Eq`, `Ord` and `Hash` are consistent with each other (`a == b` iff
+///   `a.cmp(&b) == Equal`, and equal values hash equally) and deterministic;
+/// - none of `Clone::clone`, `PartialEq::eq`, `Ord::cmp` and `Hash::hash`
+///   panics.
+pub unsafe trait IndexKey: Clone + Eq + Ord + Hash {}
+
+macro_rules! impl_index_key {
+    ($($t:ty),* $(,)?) => { $(unsafe impl IndexKey for $t {})* };
+}
+impl_index_key!(
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    bool,
+    char,
+    (),
+    String,
+    &str,
+);
+unsafe impl<T: IndexKey> IndexKey for &T {}
+unsafe impl<T: IndexKey> IndexKey for Option<T> {}
+unsafe impl<A: IndexKey, B: IndexKey> IndexKey for (A, B) {}
+unsafe impl<A: IndexKey, B: IndexKey, C: IndexKey> IndexKey for (A, B, C) {}
 
 /// Base collection: associated value/storage types and consuming iteration.
 ///
@@ -93,7 +138,7 @@ impl<V, S> Collection for LinkedList<(V, S)> {
     }
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> Collection for BTreeMap<I, S> {
+impl<I: IndexKey, S> Collection for BTreeMap<I, S> {
     type Value = I;
     type Storage = S;
     type IntoValues = std::collections::btree_map::IntoKeys<I, S>;
@@ -109,7 +154,7 @@ impl<I: Copy + Eq + Ord + Hash, S> Collection for BTreeMap<I, S> {
     }
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> Collection for HashMap<I, S> {
+impl<I: IndexKey, S> Collection for HashMap<I, S> {
     type Value = I;
     type Storage = S;
     type IntoValues = std::collections::hash_map::IntoKeys<I, S>;
@@ -191,7 +236,7 @@ impl<V, S> DrainEntries for LinkedList<(V, S)> {
     }
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> DrainEntries for BTreeMap<I, S> {
+impl<I: IndexKey, S> DrainEntries for BTreeMap<I, S> {
     type IntoEntries = std::collections::btree_map::IntoIter<I, S>;
     #[inline]
     fn into_entries(self) -> Self::IntoEntries {
@@ -199,7 +244,7 @@ impl<I: Copy + Eq + Ord + Hash, S> DrainEntries for BTreeMap<I, S> {
     }
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> DrainEntries for HashMap<I, S> {
+impl<I: IndexKey, S> DrainEntries for HashMap<I, S> {
     type IntoEntries = std::collections::hash_map::IntoIter<I, S>;
     #[inline]
     fn into_entries(self) -> Self::IntoEntries {
@@ -214,8 +259,8 @@ impl<I: Copy + Eq + Ord + Hash, S> DrainEntries for HashMap<I, S> {
 /// - `Slot` — type of the end-of-list sentinel (`u32` for sequences,
 ///   `Option<Index>` for maps — always `None`).
 pub trait RandomAccess: Collection {
-    type Index: Copy + Eq + Ord + Hash;
-    type Slot: Copy + Eq + Hash;
+    type Index: IndexKey;
+    type Slot: IndexKey;
 
     /// Returns the sentinel/terminal index value used as an end-of-list marker.
     /// Sequence types return `u32::MAX`; map types return `None`.
@@ -234,6 +279,9 @@ pub trait RandomAccess: Collection {
     /// directly, so writing through it updates the raw pointer in place.
     /// For map types (`Slot = Option<Index>`) this is `Option::as_mut`.
     fn from_slot_mut(slot: &mut Self::Slot) -> Option<&mut Self::Index>;
+
+    /// Shared counterpart of [`from_slot_mut`](Self::from_slot_mut).
+    fn from_slot_ref(slot: &Self::Slot) -> Option<&Self::Index>;
 
     /// Whether `Index` values form a dense `0..len()` range (sequence-backed),
     /// so removal relocates the last element (`swap_remove`) and indices double
@@ -310,6 +358,15 @@ impl<V, S> RandomAccess for Vec<(V, S)> {
     }
 
     #[inline]
+    fn from_slot_ref(slot: &u32) -> Option<&u32> {
+        if *slot == u32::MAX {
+            None
+        } else {
+            Some(slot)
+        }
+    }
+
+    #[inline]
     fn contains_index(&self, ix: &u32) -> bool {
         (*ix as usize) < self.len()
     }
@@ -332,7 +389,7 @@ impl<V, S> RandomAccess for Vec<(V, S)> {
     }
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> RandomAccess for BTreeMap<I, S> {
+impl<I: IndexKey, S> RandomAccess for BTreeMap<I, S> {
     type Index = I;
     type Slot = Option<I>;
 
@@ -354,6 +411,11 @@ impl<I: Copy + Eq + Ord + Hash, S> RandomAccess for BTreeMap<I, S> {
     #[inline]
     fn from_slot_mut(slot: &mut Option<I>) -> Option<&mut I> {
         slot.as_mut()
+    }
+
+    #[inline]
+    fn from_slot_ref(slot: &Option<I>) -> Option<&I> {
+        slot.as_ref()
     }
 
     #[inline]
@@ -411,6 +473,15 @@ impl<V: Clone, S: Clone> RandomAccess for &mut [(V, S)] {
             Some(slot)
         }
     }
+
+    #[inline]
+    fn from_slot_ref(slot: &u32) -> Option<&u32> {
+        if *slot == u32::MAX {
+            None
+        } else {
+            Some(slot)
+        }
+    }
     #[inline]
     fn contains_index(&self, ix: &u32) -> bool {
         (*ix as usize) < <[(V, S)]>::len(self)
@@ -434,7 +505,7 @@ impl<V: Clone, S: Clone> RandomAccess for &mut [(V, S)] {
     }
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> RandomAccess for HashMap<I, S> {
+impl<I: IndexKey, S> RandomAccess for HashMap<I, S> {
     type Index = I;
     type Slot = Option<I>;
 
@@ -456,6 +527,11 @@ impl<I: Copy + Eq + Ord + Hash, S> RandomAccess for HashMap<I, S> {
     #[inline]
     fn from_slot_mut(slot: &mut Option<I>) -> Option<&mut I> {
         slot.as_mut()
+    }
+
+    #[inline]
+    fn from_slot_ref(slot: &Option<I>) -> Option<&I> {
+        slot.as_ref()
     }
 
     #[inline]
@@ -549,7 +625,7 @@ impl<'a, V: 'a, S: 'a> CollectionMut<'a> for LinkedList<(V, S)> {
     }
 }
 
-impl<'a, I: Copy + Eq + Ord + Hash + 'a, S: 'a> CollectionRef<'a> for BTreeMap<I, S> {
+impl<'a, I: IndexKey + 'a, S: 'a> CollectionRef<'a> for BTreeMap<I, S> {
     type IterValue = std::collections::btree_map::Keys<'a, I, S>;
 
     #[inline]
@@ -558,7 +634,7 @@ impl<'a, I: Copy + Eq + Ord + Hash + 'a, S: 'a> CollectionRef<'a> for BTreeMap<I
     }
 }
 
-impl<'a, I: Copy + Eq + Ord + Hash + 'a, S: 'a> CollectionRef<'a> for HashMap<I, S> {
+impl<'a, I: IndexKey + 'a, S: 'a> CollectionRef<'a> for HashMap<I, S> {
     type IterValue = std::collections::hash_map::Keys<'a, I, S>;
 
     #[inline]
@@ -578,7 +654,7 @@ pub trait CollectionBiject: RandomAccess {
         Self::Value: PartialEq;
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> CollectionBiject for BTreeMap<I, S> {
+impl<I: IndexKey, S> CollectionBiject for BTreeMap<I, S> {
     unsafe fn value_to_key_unchecked(&self, value: &I) -> Option<&I>
     where
         I: PartialEq,
@@ -587,7 +663,7 @@ impl<I: Copy + Eq + Ord + Hash, S> CollectionBiject for BTreeMap<I, S> {
     }
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> CollectionBiject for HashMap<I, S> {
+impl<I: IndexKey, S> CollectionBiject for HashMap<I, S> {
     unsafe fn value_to_key_unchecked(&self, value: &I) -> Option<&I>
     where
         I: PartialEq,
@@ -606,6 +682,13 @@ where
     type Indices: Iterator<Item = Self::Index>;
 
     fn indices(&'a self) -> Self::Indices;
+
+    /// Item of [`index_refs`](Self::index_refs): `&'a Index` or an owned `Index`.
+    type IndexRef: Borrow<Self::Index>;
+    type IndexRefs: Iterator<Item = Self::IndexRef>;
+
+    /// Like [`indices`](Self::indices), but without cloning stored keys.
+    fn index_refs(&'a self) -> Self::IndexRefs;
 }
 
 impl<'a, V: 'a, S: 'a> RandomAccessRef<'a> for Vec<(V, S)> {
@@ -614,6 +697,13 @@ impl<'a, V: 'a, S: 'a> RandomAccessRef<'a> for Vec<(V, S)> {
     #[inline]
     fn indices(&'a self) -> Self::Indices {
         (0..Vec::len(self)).map((|i| i as u32) as fn(usize) -> u32)
+    }
+    type IndexRef = u32;
+    type IndexRefs = Self::Indices;
+
+    #[inline]
+    fn index_refs(&'a self) -> Self::IndexRefs {
+        self.indices()
     }
 }
 
@@ -624,23 +714,44 @@ impl<'a, 'b: 'a, V: Clone + 'a, S: Clone + 'a> RandomAccessRef<'a> for &'b mut [
     fn indices(&'a self) -> Self::Indices {
         (0..<[(V, S)]>::len(self)).map((|i| i as u32) as fn(usize) -> u32)
     }
-}
-
-impl<'a, I: Copy + Eq + Ord + Hash + 'a, S: 'a> RandomAccessRef<'a> for BTreeMap<I, S> {
-    type Indices = std::iter::Copied<std::collections::btree_map::Keys<'a, I, S>>;
+    type IndexRef = u32;
+    type IndexRefs = Self::Indices;
 
     #[inline]
-    fn indices(&'a self) -> Self::Indices {
-        self.keys().copied()
+    fn index_refs(&'a self) -> Self::IndexRefs {
+        self.indices()
     }
 }
 
-impl<'a, I: Copy + Eq + Ord + Hash + 'a, S: 'a> RandomAccessRef<'a> for HashMap<I, S> {
-    type Indices = std::iter::Copied<std::collections::hash_map::Keys<'a, I, S>>;
+impl<'a, I: IndexKey + 'a, S: 'a> RandomAccessRef<'a> for BTreeMap<I, S> {
+    type Indices = std::iter::Cloned<std::collections::btree_map::Keys<'a, I, S>>;
 
     #[inline]
     fn indices(&'a self) -> Self::Indices {
-        self.keys().copied()
+        self.keys().cloned()
+    }
+    type IndexRef = &'a I;
+    type IndexRefs = std::collections::btree_map::Keys<'a, I, S>;
+
+    #[inline]
+    fn index_refs(&'a self) -> Self::IndexRefs {
+        self.keys()
+    }
+}
+
+impl<'a, I: IndexKey + 'a, S: 'a> RandomAccessRef<'a> for HashMap<I, S> {
+    type Indices = std::iter::Cloned<std::collections::hash_map::Keys<'a, I, S>>;
+
+    #[inline]
+    fn indices(&'a self) -> Self::Indices {
+        self.keys().cloned()
+    }
+    type IndexRef = &'a I;
+    type IndexRefs = std::collections::hash_map::Keys<'a, I, S>;
+
+    #[inline]
+    fn index_refs(&'a self) -> Self::IndexRefs {
+        self.keys()
     }
 }
 
@@ -684,7 +795,7 @@ impl<V, S> InsertableCollection for LinkedList<(V, S)> {
     }
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> InsertableCollection for BTreeMap<I, S> {
+impl<I: IndexKey, S> InsertableCollection for BTreeMap<I, S> {
     type InsertedIndex = I;
 
     #[inline]
@@ -692,12 +803,12 @@ impl<I: Copy + Eq + Ord + Hash, S> InsertableCollection for BTreeMap<I, S> {
         if self.contains_key(&value) {
             return Err((value, storage));
         }
-        BTreeMap::insert(self, value, storage);
+        BTreeMap::insert(self, value.clone(), storage);
         Ok(value)
     }
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> InsertableCollection for HashMap<I, S> {
+impl<I: IndexKey, S> InsertableCollection for HashMap<I, S> {
     type InsertedIndex = I;
 
     #[inline]
@@ -705,7 +816,7 @@ impl<I: Copy + Eq + Ord + Hash, S> InsertableCollection for HashMap<I, S> {
         if self.contains_key(&value) {
             return Err((value, storage));
         }
-        HashMap::insert(self, value, storage);
+        HashMap::insert(self, value.clone(), storage);
         Ok(value)
     }
 }
@@ -746,9 +857,9 @@ impl<V: Clone, S: Clone> UpdatableRandomAccess for &mut [(V, S)] {
 pub unsafe trait StableCollection: RandomAccess {}
 
 // SAFETY: auto impl
-unsafe impl<I: Copy + Eq + Ord + Hash, S> StableCollection for BTreeMap<I, S> {}
+unsafe impl<I: IndexKey, S> StableCollection for BTreeMap<I, S> {}
 // SAFETY: auto impl
-unsafe impl<I: Copy + Eq + Ord + Hash, S> StableCollection for HashMap<I, S> {}
+unsafe impl<I: IndexKey, S> StableCollection for HashMap<I, S> {}
 
 /// Removal extension for [`RandomAccess`].
 ///
@@ -776,7 +887,7 @@ impl<V, S> RemovableRandomAccess for Vec<(V, S)> {
     }
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> RemovableRandomAccess for BTreeMap<I, S> {
+impl<I: IndexKey, S> RemovableRandomAccess for BTreeMap<I, S> {
     #[inline]
     unsafe fn take_unchecked(&mut self, ix: &I) -> (I, S, Option<I>) {
         let (k, s) = unwrap_unchecked(BTreeMap::remove_entry(self, ix));
@@ -784,7 +895,7 @@ impl<I: Copy + Eq + Ord + Hash, S> RemovableRandomAccess for BTreeMap<I, S> {
     }
 }
 
-impl<I: Copy + Eq + Ord + Hash, S> RemovableRandomAccess for HashMap<I, S> {
+impl<I: IndexKey, S> RemovableRandomAccess for HashMap<I, S> {
     #[inline]
     unsafe fn take_unchecked(&mut self, ix: &I) -> (I, S, Option<I>) {
         let (k, s) = unwrap_unchecked(HashMap::remove_entry(self, ix));

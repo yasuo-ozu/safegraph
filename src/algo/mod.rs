@@ -49,3 +49,38 @@ pub mod shortest_path;
 pub mod simple_paths;
 pub mod toposort;
 pub mod tred;
+
+use std::borrow::Borrow;
+
+use crate::graph::{GraphOperation, GraphProperty};
+
+/// [`node_indices`](GraphOperation::node_indices) with every item cloned out
+/// of its [`NodeIxRef`](GraphOperation::NodeIxRef): algorithms keep node
+/// indices in sets, maps and stacks, so they need owned values.
+pub(crate) type OwnedNodeIndices<'r, G> = std::iter::Map<
+    <G as GraphOperation<'r>>::NodeIndices,
+    fn(<G as GraphOperation<'r>>::NodeIxRef) -> <G as GraphProperty>::NodeIx,
+>;
+
+pub(crate) fn owned_node_indices<'r, G>(graph: &'r G) -> OwnedNodeIndices<'r, G>
+where
+    G: GraphOperation<'r> + ?Sized,
+{
+    <G as GraphOperation<'r>>::node_indices(graph)
+        .map((|ix: G::NodeIxRef| ix.borrow().clone()) as fn(_) -> _)
+}
+
+/// [`edge_indices`](GraphOperation::edge_indices) with every item cloned out
+/// of its [`EdgeIxRef`](GraphOperation::EdgeIxRef).
+pub(crate) type OwnedEdgeIndices<'r, G> = std::iter::Map<
+    <G as GraphOperation<'r>>::EdgeIndices,
+    fn(<G as GraphOperation<'r>>::EdgeIxRef) -> <G as GraphProperty>::EdgeIx,
+>;
+
+pub(crate) fn owned_edge_indices<'r, G>(graph: &'r G) -> OwnedEdgeIndices<'r, G>
+where
+    G: GraphOperation<'r> + ?Sized,
+{
+    <G as GraphOperation<'r>>::edge_indices(graph)
+        .map((|ix: G::EdgeIxRef| ix.borrow().clone()) as fn(_) -> _)
+}

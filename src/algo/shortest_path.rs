@@ -149,19 +149,20 @@ where
     let mut visited: HashSet<G::NodeIx> = HashSet::new();
     let mut heap = BinaryHeap::new();
 
-    dist.insert(start, (W::default(), None));
+    dist.insert(start.clone(), (W::default(), None));
     heap.push(MinScore(W::default(), start));
 
     while let Some(MinScore(cost, node)) = heap.pop() {
-        if !visited.insert(node) {
+        if !visited.insert(node.clone()) {
             continue;
         }
 
-        if goal == Some(node) {
+        if goal == Some(node.clone()) {
             break;
         }
 
-        for wi in <G as crate::graph::GraphOperation<'_>>::walks_from_unchecked(graph, node) {
+        for wi in <G as crate::graph::GraphOperation<'_>>::walks_from_unchecked(graph, node.clone())
+        {
             let (_, edge, target) = wi.get();
             if visited.contains(&target) {
                 continue;
@@ -175,7 +176,7 @@ where
             };
 
             if is_shorter {
-                dist.insert(target, (new_dist, Some(node)));
+                dist.insert(target.clone(), (new_dist, Some(node.clone())));
                 heap.push(MinScore(new_dist, target));
             }
         }
@@ -244,15 +245,14 @@ where
     let mut dist: HashMap<G::NodeIx, (W, Option<G::NodeIx>)> = HashMap::new();
     dist.insert(start, (W::default(), None));
 
-    let edges: Vec<(G::NodeIx, G::NodeIx, W)> =
-        <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph)
-            .map(|eix| {
-                let tail = graph.edge_tail_index_unchecked(eix);
-                let head = graph.edge_head_index_unchecked(eix);
-                let w = edge_weight(Graph::edge_unchecked(graph, eix));
-                (tail, head, w)
-            })
-            .collect();
+    let edges: Vec<(G::NodeIx, G::NodeIx, W)> = super::owned_edge_indices(graph)
+        .map(|eix| {
+            let tail = graph.edge_tail_index_unchecked(eix.clone());
+            let head = graph.edge_head_index_unchecked(eix.clone());
+            let w = edge_weight(Graph::edge_unchecked(graph, eix));
+            (tail, head, w)
+        })
+        .collect();
 
     BellmanFord {
         edges,
@@ -267,7 +267,7 @@ where
 
 impl<N, W> BellmanFord<N, W>
 where
-    N: Copy + Eq + std::hash::Hash,
+    N: Clone + Eq + std::hash::Hash,
     W: Copy + Ord + Add<Output = W> + Default,
 {
     /// Complete the algorithm and check for negative cycles.
@@ -278,7 +278,7 @@ where
         while self.next().is_some() {}
 
         // Check for negative cycles
-        for &(tail, head, w) in &self.edges {
+        for (tail, head, w) in self.edges.iter().cloned() {
             if let Some(&(d, _)) = self.dist.get(&tail) {
                 let new_dist = d + w;
                 let is_shorter = match self.dist.get(&head) {
@@ -297,7 +297,7 @@ where
 
 impl<N, W> Iterator for BellmanFord<N, W>
 where
-    N: Copy + Eq + std::hash::Hash,
+    N: Clone + Eq + std::hash::Hash,
     W: Copy + Ord + Add<Output = W> + Default,
 {
     type Item = (N, W, Option<N>);
@@ -326,7 +326,7 @@ where
                 }
             }
 
-            let (tail, head, w) = self.edges[self.edge_idx];
+            let (tail, head, w) = self.edges[self.edge_idx].clone();
             self.edge_idx += 1;
 
             if let Some(&(d, _)) = self.dist.get(&tail) {
@@ -336,7 +336,8 @@ where
                     None => true,
                 };
                 if is_shorter {
-                    self.dist.insert(head, (new_dist, Some(tail)));
+                    self.dist
+                        .insert(head.clone(), (new_dist, Some(tail.clone())));
                     self.round_changed = true;
                     return Some((head, new_dist, Some(tail)));
                 }
@@ -389,30 +390,31 @@ where
     let mut closed: HashSet<G::NodeIx> = HashSet::new();
     let mut heap = BinaryHeap::new();
 
-    g_score.insert(start, W::default());
-    heap.push(MinScore(W::default() + heuristic(start), start));
+    g_score.insert(start.clone(), W::default());
+    heap.push(MinScore(W::default() + heuristic(start.clone()), start));
 
     while let Some(MinScore(_, node)) = heap.pop() {
         if node == goal {
             // Reconstruct path
             let cost = g_score[&goal];
-            let mut path = vec![goal];
+            let mut path = vec![goal.clone()];
             let mut current = goal;
-            while let Some(&prev) = came_from.get(&current) {
-                path.push(prev);
+            while let Some(prev) = came_from.get(&current).cloned() {
+                path.push(prev.clone());
                 current = prev;
             }
             path.reverse();
             return Some((cost, path));
         }
 
-        if !closed.insert(node) {
+        if !closed.insert(node.clone()) {
             continue;
         }
 
         let current_g = g_score[&node];
 
-        for wi in <G as crate::graph::GraphOperation<'_>>::walks_from_unchecked(graph, node) {
+        for wi in <G as crate::graph::GraphOperation<'_>>::walks_from_unchecked(graph, node.clone())
+        {
             let (_, edge, target) = wi.get();
             if closed.contains(&target) {
                 continue;
@@ -426,9 +428,9 @@ where
             };
 
             if is_shorter {
-                g_score.insert(target, new_g);
-                came_from.insert(target, node);
-                let f_score = new_g + heuristic(target);
+                g_score.insert(target.clone(), new_g);
+                came_from.insert(target.clone(), node.clone());
+                let f_score = new_g + heuristic(target.clone());
                 heap.push(MinScore(f_score, target));
             }
         }
@@ -451,24 +453,26 @@ where
     W: Copy + Ord + Add<Output = W> + Default + Bounded,
     F: FnMut(&G::Edge) -> W,
 {
-    let nodes: Vec<G::NodeIx> =
-        <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
+    let nodes: Vec<G::NodeIx> = super::owned_node_indices(graph).collect();
     let inf = W::max_value();
 
     // dist[(i, j)] = shortest distance from i to j, using max_value() as infinity
     let mut dist: HashMap<(G::NodeIx, G::NodeIx), W> = HashMap::new();
 
     // Initialize: all pairs to infinity
-    for &i in &nodes {
-        for &j in &nodes {
-            dist.insert((i, j), if i == j { W::default() } else { inf });
+    for i in nodes.iter().cloned() {
+        for j in nodes.iter().cloned() {
+            dist.insert(
+                (i.clone(), j.clone()),
+                if i == j { W::default() } else { inf },
+            );
         }
     }
 
     // Initialize: direct edges
-    for eix in <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph) {
-        let tail = graph.edge_tail_index(eix);
-        let head = graph.edge_head_index(eix);
+    for eix in super::owned_edge_indices(graph) {
+        let tail = graph.edge_tail_index(eix.clone());
+        let head = graph.edge_head_index(eix.clone());
         let w = edge_weight(graph.edge(eix));
         let entry = dist.entry((tail, head)).or_insert(inf);
         if w < *entry {
@@ -477,19 +481,19 @@ where
     }
 
     // Relax through intermediate nodes
-    for &k in &nodes {
-        for &i in &nodes {
-            let d_ik = dist[&(i, k)];
+    for k in nodes.iter() {
+        for i in nodes.iter() {
+            let d_ik = dist[&(i.clone(), k.clone())];
             if d_ik == inf {
                 continue; // skip overflow
             }
-            for &j in &nodes {
-                let d_kj = dist[&(k, j)];
+            for j in nodes.iter().cloned() {
+                let d_kj = dist[&(k.clone(), j.clone())];
                 if d_kj == inf {
                     continue; // skip overflow
                 }
                 let new_dist = d_ik + d_kj;
-                let entry = dist.get_mut(&(i, j)).unwrap();
+                let entry = dist.get_mut(&(i.clone(), j)).unwrap();
                 if new_dist < *entry {
                     *entry = new_dist;
                 }
@@ -498,8 +502,8 @@ where
     }
 
     // Check for negative cycles (diagonal < 0)
-    for &n in &nodes {
-        if dist[&(n, n)] < W::default() {
+    for n in nodes.iter().cloned() {
+        if dist[&(n.clone(), n)] < W::default() {
             return Err(NegativeCycleError);
         }
     }
@@ -566,7 +570,13 @@ where
     let mut done = false;
 
     if k > 0 {
-        let first = astar_unchecked(graph, start, goal, |e| edge_weight(e), |_| W::default());
+        let first = astar_unchecked(
+            graph,
+            start,
+            goal.clone(),
+            |e| edge_weight(e),
+            |_| W::default(),
+        );
         match first {
             Some(p) => shortest_paths.push(p),
             None => done = true,
@@ -633,21 +643,21 @@ where
         let prev_path = self.shortest_paths[ki - 1].1.clone();
 
         for spur_idx in 0..prev_path.len() - 1 {
-            let spur_node = prev_path[spur_idx];
+            let spur_node = prev_path[spur_idx].clone();
             let root_path = &prev_path[..=spur_idx];
             let root_cost = if spur_idx == 0 {
                 W::default()
             } else {
                 let mut cost = W::default();
                 for w in 0..spur_idx {
-                    let from = prev_path[w];
-                    let to = prev_path[w + 1];
+                    let from = prev_path[w].clone();
+                    let to = prev_path[w + 1].clone();
                     for eix in unsafe {
                         <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
-                            self.graph, from,
+                            self.graph, &from,
                         )
                     } {
-                        if unsafe { self.graph.edge_head_index_unchecked(eix) } == to {
+                        if unsafe { self.graph.edge_head_index_unchecked(eix.clone()) } == to {
                             cost = cost
                                 + (self.edge_weight)(unsafe {
                                     Graph::edge_unchecked(self.graph, eix)
@@ -662,23 +672,23 @@ where
             let mut excluded_edges: HashSet<(G::NodeIx, G::NodeIx)> = HashSet::new();
             for sp in &self.shortest_paths {
                 if sp.1.len() > spur_idx && sp.1[..=spur_idx] == *root_path {
-                    excluded_edges.insert((sp.1[spur_idx], sp.1[spur_idx + 1]));
+                    excluded_edges.insert((sp.1[spur_idx].clone(), sp.1[spur_idx + 1].clone()));
                 }
             }
 
             let root_nodes: HashSet<G::NodeIx> =
-                root_path[..root_path.len() - 1].iter().copied().collect();
+                root_path[..root_path.len() - 1].iter().cloned().collect();
 
             let spur_path = {
                 let mut dist_map: HashMap<G::NodeIx, (W, Option<G::NodeIx>)> = HashMap::new();
                 let mut visited: HashSet<G::NodeIx> = HashSet::new();
                 let mut heap = BinaryHeap::new();
 
-                dist_map.insert(spur_node, (W::default(), None));
+                dist_map.insert(spur_node.clone(), (W::default(), None));
                 heap.push(MinScore(W::default(), spur_node));
 
                 while let Some(MinScore(cost, node)) = heap.pop() {
-                    if !visited.insert(node) {
+                    if !visited.insert(node.clone()) {
                         continue;
                     }
                     if node == self.goal {
@@ -686,14 +696,14 @@ where
                     }
                     for eix in unsafe {
                         <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
-                            self.graph, node,
+                            self.graph, &node,
                         )
                     } {
-                        let target = unsafe { self.graph.edge_head_index_unchecked(eix) };
+                        let target = unsafe { self.graph.edge_head_index_unchecked(eix.clone()) };
                         if visited.contains(&target) || root_nodes.contains(&target) {
                             continue;
                         }
-                        if excluded_edges.contains(&(node, target)) {
+                        if excluded_edges.contains(&(node.clone(), target.clone())) {
                             continue;
                         }
                         let w =
@@ -704,7 +714,7 @@ where
                             None => true,
                         };
                         if is_shorter {
-                            dist_map.insert(target, (new_dist, Some(node)));
+                            dist_map.insert(target.clone(), (new_dist, Some(node.clone())));
                             heap.push(MinScore(new_dist, target));
                         }
                     }
@@ -714,10 +724,10 @@ where
                     None
                 } else {
                     let spur_cost = dist_map[&self.goal].0;
-                    let mut path = vec![self.goal];
-                    let mut current = self.goal;
-                    while let Some(&(_, Some(prev))) = dist_map.get(&current) {
-                        path.push(prev);
+                    let mut path = vec![self.goal.clone()];
+                    let mut current = self.goal.clone();
+                    while let Some((_, Some(prev))) = dist_map.get(&current).cloned() {
+                        path.push(prev.clone());
                         current = prev;
                     }
                     path.reverse();

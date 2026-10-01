@@ -77,7 +77,7 @@ where
     {
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
-        visited.insert(start);
+        visited.insert(start.clone());
         queue.push_back(start);
         Bfs {
             graph,
@@ -93,7 +93,7 @@ where
     where
         G: StableNode,
     {
-        assert!(Graph::contains_node_index(graph, start));
+        assert!(Graph::contains_node_index(graph, &start));
         // SAFETY: StableNode guarantees index stability; start checked above.
         unsafe { Self::new_unchecked(graph, start) }
     }
@@ -103,7 +103,7 @@ where
     /// # Safety
     /// `start` must be a valid node index for `self.graph`.
     pub unsafe fn add_start_unchecked(&mut self, start: G::NodeIx) {
-        if self.visited.insert(start) {
+        if self.visited.insert(start.clone()) {
             self.queue.push_back(start);
         }
     }
@@ -112,7 +112,7 @@ where
     ///
     /// Panics if `start` is not a valid node index.
     pub fn add_start(&mut self, start: G::NodeIx) {
-        assert!(Graph::contains_node_index(self.graph, start));
+        assert!(Graph::contains_node_index(self.graph, &start));
         // SAFETY: checked in precondition
         unsafe { self.add_start_unchecked(start) }
     }
@@ -132,12 +132,12 @@ where
         // The caller guarantees the graph is not modified (via StableNode or
         // the unsafe contract of new_unchecked).
         for eix in unsafe {
-            <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, node)
+            <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, &node)
         } {
             for endpoint in unsafe {
                 <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix)
             } {
-                if endpoint != node && self.visited.insert(endpoint) {
+                if endpoint != node && self.visited.insert(endpoint.clone()) {
                     self.queue.push_back(endpoint);
                 }
             }

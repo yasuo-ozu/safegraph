@@ -1,3 +1,4 @@
+use crate::collection::IndexKey;
 use core::borrow::Borrow;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
@@ -11,6 +12,9 @@ use super::{GraphOperation, GraphProperty};
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct NodeIx<'scope, I>(crate::Invariant<'scope>, I);
+
+// SAFETY: the derived impls delegate to `I` (the brand is a zero-sized marker).
+unsafe impl<'scope, I: IndexKey> IndexKey for NodeIx<'scope, I> {}
 
 impl<'scope, I: Display> Display for NodeIx<'scope, I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -33,6 +37,9 @@ impl<'scope, I> NodeIx<'scope, I> {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct EdgeIx<'scope, I>(crate::Invariant<'scope>, I);
+
+// SAFETY: as for `NodeIx`.
+unsafe impl<'scope, I: IndexKey> IndexKey for EdgeIx<'scope, I> {}
 
 impl<'scope, I: Display> Display for EdgeIx<'scope, I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -182,11 +189,15 @@ pub struct RemovableContext<'r, 'scope, G: ?Sized> {
 
 fn dedup_checked<I>(iter: impl Iterator<Item = I>) -> Vec<I>
 where
-    I: Copy + Eq + core::hash::Hash + Display,
+    I: Clone + Eq + core::hash::Hash + Display,
 {
     let mut seen = std::collections::HashSet::with_capacity(iter.size_hint().0);
     iter.map(|ix| {
-        assert!(seen.insert(ix), "duplicate index {} in batch removal", ix);
+        assert!(
+            seen.insert(ix.clone()),
+            "duplicate index {} in batch removal",
+            ix
+        );
         ix
     })
     .collect()
@@ -284,14 +295,14 @@ impl<'r, 'scope, G: ?Sized> RemovableContext<'r, 'scope, G> {
             let mut edges_out = IE::default();
             let first_edge_index = edge_indices.next();
             let first_node_index = node_indices.next();
-            if let Some(EdgeIx(_, eix)) = first_edge_index {
+            if let Some(EdgeIx(_, eix)) = first_edge_index.clone() {
                 // SAFETY: scoped indices are produced from this context and
                 // stay valid for the scope.
                 let e =
                     unsafe { <G as RemoveEdge>::take_edge_unchecked(&mut self.context.graph, eix) };
                 edges_out.extend(core::iter::once(e));
             }
-            if let Some(NodeIx(_, nix)) = first_node_index {
+            if let Some(NodeIx(_, nix)) = first_node_index.clone() {
                 // SAFETY: scoped indices are produced from this context and
                 // stay valid for the scope.
                 let n =
@@ -303,8 +314,8 @@ impl<'r, 'scope, G: ?Sized> RemovableContext<'r, 'scope, G> {
             // thrown away during optimization, so the deligated iterator and Vec is not costly.
             let (nodes_out_internal, edges_out_internal): (Vec<_>, Vec<_>) = internal(
                 &mut self,
-                node_indices.filter(|n| first_node_index.map(|ix| &ix == n) != Some(true)),
-                edge_indices.filter(|n| first_edge_index.map(|ix| &ix == n) != Some(true)),
+                node_indices.filter(|n| first_node_index.as_ref() != Some(n)),
+                edge_indices.filter(|n| first_edge_index.as_ref() != Some(n)),
             );
             nodes_out.extend(nodes_out_internal);
             edges_out.extend(edges_out_internal);
@@ -324,8 +335,8 @@ impl<'r, 'scope, G: ?Sized> RemovableContext<'r, 'scope, G> {
     {
         // SAFETY: indices are collected into owned `Vec`s (no live borrows)
         // before the mutable removal call.
-        let edges: Vec<_> = <G as GraphOperation<'_>>::edge_indices(&self.context.graph).collect();
-        let nodes: Vec<_> = <G as GraphOperation<'_>>::node_indices(&self.context.graph).collect();
+        let edges: Vec<_> = crate::algo::owned_edge_indices(&self.context.graph).collect();
+        let nodes: Vec<_> = crate::algo::owned_node_indices(&self.context.graph).collect();
         let _: (Sink, Sink) = unsafe {
             <G as RemoveNode>::take_nodes_edges_unchecked(&mut self.context.graph, nodes, edges)
         };
@@ -362,6 +373,54 @@ where
     }
 }
 
+/// Iterator returned by [`Context`]'s `node_indices`: brands each index of the
+/// inner graph, cloning it out of the inner
+/// [`NodeIxRef`](GraphOperation::NodeIxRef).
+pub struct NodeIndicesIter<'scope, I, Ix> {
+    iter: I,
+    _marker: PhantomData<fn() -> Ix>,
+    _scope: crate::Invariant<'scope>,
+}
+
+impl<'scope, I, Ix> Iterator for NodeIndicesIter<'scope, I, Ix>
+where
+    I: Iterator,
+    I::Item: Borrow<Ix>,
+    Ix: Clone,
+{
+    type Item = NodeIx<'scope, Ix>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter
+            .next()
+            .map(|ix| NodeIx(PhantomData, ix.borrow().clone()))
+    }
+}
+
+/// Iterator returned by [`Context`]'s `edge_indices`: brands each index of the
+/// inner graph, cloning it out of the inner
+/// [`EdgeIxRef`](GraphOperation::EdgeIxRef).
+pub struct EdgeIndicesIter<'scope, I, Ix> {
+    iter: I,
+    _marker: PhantomData<fn() -> Ix>,
+    _scope: crate::Invariant<'scope>,
+}
+
+impl<'scope, I, Ix> Iterator for EdgeIndicesIter<'scope, I, Ix>
+where
+    I: Iterator,
+    I::Item: Borrow<Ix>,
+    Ix: Clone,
+{
+    type Item = EdgeIx<'scope, Ix>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter
+            .next()
+            .map(|ix| EdgeIx(PhantomData, ix.borrow().clone()))
+    }
+}
+
 pub struct EdgeIxIter<'scope, I> {
     iter: I,
     _scope: crate::Invariant<'scope>,
@@ -384,7 +443,7 @@ where
     <G as GraphProperty>::Endpoints: Map<NodeIx<'scope, <G as GraphProperty>::NodeIx>>,
 {
     #[inline]
-    fn contains_node_index(&self, NodeIx(_, _node_ix): Self::NodeIx) -> bool {
+    fn contains_node_index(&self, NodeIx(_, _node_ix): &Self::NodeIx) -> bool {
         true
     }
 
@@ -393,32 +452,36 @@ where
         true
     }
 
-    type NodeIndices = NodeIxIter<'scope, <G as GraphOperation<'r>>::NodeIndices>;
-    type EdgeIndices = EdgeIxIter<'scope, <G as GraphOperation<'r>>::EdgeIndices>;
+    type NodeIxRef = Self::NodeIx;
+    type NodeIndices = NodeIndicesIter<'scope, <G as GraphOperation<'r>>::NodeIndices, G::NodeIx>;
+    type EdgeIxRef = Self::EdgeIx;
+    type EdgeIndices = EdgeIndicesIter<'scope, <G as GraphOperation<'r>>::EdgeIndices, G::EdgeIx>;
 
     #[inline]
     fn node_indices(&'r self) -> Self::NodeIndices {
-        NodeIxIter {
+        NodeIndicesIter {
             iter: <G as GraphOperation<'r>>::node_indices(&self.graph),
+            _marker: PhantomData,
             _scope: PhantomData,
         }
     }
 
     #[inline]
     fn edge_indices(&'r self) -> Self::EdgeIndices {
-        EdgeIxIter {
+        EdgeIndicesIter {
             iter: <G as GraphOperation<'r>>::edge_indices(&self.graph),
+            _marker: PhantomData,
             _scope: PhantomData,
         }
     }
 
     #[inline]
-    unsafe fn node_unchecked(&self, NodeIx(_, node_ix): Self::NodeIx) -> &Self::Node {
+    unsafe fn node_unchecked(&self, NodeIx(_, node_ix): &Self::NodeIx) -> &Self::Node {
         <G as GraphOperation<'_>>::node_unchecked(&self.graph, node_ix)
     }
 
     #[inline]
-    unsafe fn edge_unchecked(&self, EdgeIx(_, edge_ix): Self::EdgeIx) -> &Self::Edge {
+    unsafe fn edge_unchecked(&self, EdgeIx(_, edge_ix): &Self::EdgeIx) -> &Self::Edge {
         <G as GraphOperation<'_>>::edge_unchecked(&self.graph, edge_ix)
     }
 
@@ -433,7 +496,7 @@ where
     #[inline]
     unsafe fn edge_indices_from_unchecked(
         &'r self,
-        NodeIx(_, node_ix): Self::NodeIx,
+        NodeIx(_, node_ix): &Self::NodeIx,
     ) -> Self::EdgeIndicesFrom {
         EdgeIxIter {
             iter: unsafe {

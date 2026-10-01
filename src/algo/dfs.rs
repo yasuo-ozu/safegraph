@@ -87,7 +87,7 @@ where
     {
         let mut visited = HashSet::new();
         let mut stack = Vec::new();
-        visited.insert(start);
+        visited.insert(start.clone());
         stack.push(start);
         Dfs {
             graph,
@@ -110,14 +110,14 @@ where
     /// # Safety
     /// `start` must be a valid node index for `self.graph`.
     pub unsafe fn add_start_unchecked(&mut self, start: G::NodeIx) {
-        if self.visited.insert(start) {
+        if self.visited.insert(start.clone()) {
             self.stack.push(start);
         }
     }
 
     /// Adds another root to the DFS frontier.
     pub fn add_start(&mut self, start: G::NodeIx) {
-        assert!(Graph::contains_node_index(self.graph, start));
+        assert!(Graph::contains_node_index(self.graph, &start));
         // SAFETY: checked in precondition
         unsafe { self.add_start_unchecked(start) }
     }
@@ -133,12 +133,12 @@ where
         let node = self.stack.pop()?;
         // SAFETY: node came from the graph. Caller guarantees no modification.
         for eix in unsafe {
-            <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, node)
+            <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, &node)
         } {
             for endpoint in unsafe {
                 <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix)
             } {
-                if endpoint != node && self.visited.insert(endpoint) {
+                if endpoint != node && self.visited.insert(endpoint.clone()) {
                     self.stack.push(endpoint);
                 }
             }
@@ -183,8 +183,8 @@ where
     {
         let mut visited = HashSet::new();
         let mut stack = Vec::new();
-        if Graph::contains_node_index(graph, start) {
-            visited.insert(start);
+        if Graph::contains_node_index(graph, &start) {
+            visited.insert(start.clone());
             stack.push((start, false));
         }
         DfsPostOrder {
@@ -196,7 +196,7 @@ where
 
     /// Adds another root to the DFS frontier.
     pub fn add_start(&mut self, start: G::NodeIx) {
-        if self.visited.insert(start) {
+        if self.visited.insert(start.clone()) {
             self.stack.push((start, false));
         }
     }
@@ -216,11 +216,11 @@ where
                 return Some(node);
             }
             *expanded = true;
-            let node = *node;
+            let node = node.clone();
             // SAFETY: node came from the graph. Caller guarantees no modification.
             let succs: Vec<G::NodeIx> = unsafe {
                 <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
-                    self.graph, node,
+                    self.graph, &node,
                 )
             }
             .flat_map(|eix| {
@@ -229,11 +229,11 @@ where
                 }
                 .into_iter()
             })
-            .filter(|&ep| ep != node)
+            .filter(|ep| *ep != node)
             .collect();
             // Push in reverse so first successor is on top
             for succ in succs.into_iter().rev() {
-                if self.visited.insert(succ) {
+                if self.visited.insert(succ.clone()) {
                     self.stack.push((succ, false));
                 }
             }

@@ -9,6 +9,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::raw_graph::linked_adj_edge::{EdgeRepr, LinkedAdjEdgeGraph, NodeRepr};
 
+pub use crate::collection::IndexKey;
+
 /// `Vec`-backed graph with `u32` node and edge indices.
 ///
 /// # Examples

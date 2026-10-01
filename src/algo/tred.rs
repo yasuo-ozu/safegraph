@@ -81,18 +81,17 @@ pub struct DagTransitiveReduction<'r, G: ?Sized, E> {
 /// Returns an iterator over the edges in the transitive reduction of a DAG.
 pub fn dag_transitive_reduction<'r, G>(
     graph: &'r G,
-) -> DagTransitiveReduction<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices>
+) -> DagTransitiveReduction<'r, G, super::OwnedEdgeIndices<'r, G>>
 where
     G: Graph + Directed<'r> + Bigraph + StableEdge + ?Sized,
 {
     DagTransitiveReduction {
         graph,
-        edges: <_ as crate::graph::GraphOperation<'_>>::edge_indices(graph),
+        edges: super::owned_edge_indices(graph),
     }
 }
 
-impl<'r, G> Iterator
-    for DagTransitiveReduction<'r, G, <G as crate::graph::GraphOperation<'r>>::EdgeIndices>
+impl<'r, G> Iterator for DagTransitiveReduction<'r, G, super::OwnedEdgeIndices<'r, G>>
 where
     G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
 {
@@ -101,20 +100,20 @@ where
     fn next(&mut self) -> Option<G::EdgeIx> {
         loop {
             let eix = self.edges.next()?;
-            let tail = unsafe { self.graph.edge_tail_index_unchecked(eix) };
-            let head = unsafe { self.graph.edge_head_index_unchecked(eix) };
+            let tail = unsafe { self.graph.edge_tail_index_unchecked(eix.clone()) };
+            let head = unsafe { self.graph.edge_head_index_unchecked(eix.clone()) };
 
             let mut reachable_via_other = false;
             for other_eix in unsafe {
                 <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
-                    self.graph, tail,
+                    self.graph, &tail,
                 )
             } {
                 if other_eix == eix {
                     continue;
                 }
                 let other_head = unsafe { self.graph.edge_head_index_unchecked(other_eix) };
-                if unsafe { can_reach(self.graph, other_head, head) } {
+                if unsafe { can_reach(self.graph, other_head, head.clone()) } {
                     reachable_via_other = true;
                     break;
                 }
@@ -149,8 +148,7 @@ pub fn dag_transitive_closure<'r, G>(graph: &'r G) -> DagTransitiveClosure<'r, G
 where
     G: Graph + Directed<'r> + StableNode + ?Sized,
 {
-    let nodes: Vec<G::NodeIx> =
-        <_ as crate::graph::GraphOperation<'_>>::node_indices(graph).collect();
+    let nodes: Vec<G::NodeIx> = super::owned_node_indices(graph).collect();
     DagTransitiveClosure {
         graph,
         nodes,
@@ -177,13 +175,13 @@ where
 
             // Try to advance current DFS
             if let Some(current) = self.dfs_stack.pop() {
-                let source = self.current_source.unwrap();
+                let source = self.current_source.clone().unwrap();
                 let succs: Vec<G::NodeIx> =
                     unsafe { self.graph.neighbor_indices_from_unchecked(current) }.collect();
                 for succ in succs {
-                    if self.dfs_visited.insert(succ) {
-                        self.dfs_stack.push(succ);
-                        self.pending.push((source, succ));
+                    if self.dfs_visited.insert(succ.clone()) {
+                        self.dfs_stack.push(succ.clone());
+                        self.pending.push((source.clone(), succ));
                     }
                 }
                 continue;
@@ -193,11 +191,11 @@ where
             if self.node_idx >= self.nodes.len() {
                 return None;
             }
-            let source = self.nodes[self.node_idx];
+            let source = self.nodes[self.node_idx].clone();
             self.node_idx += 1;
-            self.current_source = Some(source);
+            self.current_source = Some(source.clone());
             self.dfs_visited.clear();
-            self.dfs_visited.insert(source);
+            self.dfs_visited.insert(source.clone());
             self.dfs_stack.clear();
             self.dfs_stack.push(source);
         }
@@ -213,7 +211,7 @@ where
         return true;
     }
     let mut visited = HashSet::new();
-    let mut stack = vec![source];
+    let mut stack = vec![source.clone()];
     visited.insert(source);
 
     while let Some(node) = stack.pop() {
@@ -222,7 +220,7 @@ where
             if succ == target {
                 return true;
             }
-            if visited.insert(succ) {
+            if visited.insert(succ.clone()) {
                 stack.push(succ);
             }
         }

@@ -22,8 +22,8 @@ fn insert_nodes_and_check_existence() {
     let mut g = BTreeGraph::<u32, u32>::default();
     let ix = g.insert_node(0).unwrap();
     assert_eq!(ix, 0);
-    assert!(g.contains_node_index(0));
-    assert!(!g.contains_node_index(99));
+    assert!(g.contains_node_index(&0));
+    assert!(!g.contains_node_index(&99));
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn duplicate_node_returns_err() {
 fn push_discards_index() {
     let mut g = BTreeGraph::<u32, u32>::default();
     assert!(g.push(42).is_ok());
-    assert!(g.contains_node_index(42));
+    assert!(g.contains_node_index(&42));
     // duplicate via push
     assert!(g.push(42).is_err());
 }
@@ -122,14 +122,14 @@ fn endpoint_nodes_returns_references() {
 #[test]
 fn node_indices_stable() {
     let g = diamond_btree();
-    let indices: Vec<u32> = g.node_indices().collect();
+    let indices: Vec<u32> = g.node_indices().copied().collect();
     assert_eq!(indices, vec![0, 1, 2, 3]);
 }
 
 #[test]
 fn edge_indices_stable() {
     let g = diamond_btree();
-    let indices: Vec<u32> = g.edge_indices().collect();
+    let indices: Vec<u32> = g.edge_indices().copied().collect();
     assert_eq!(indices, vec![10, 11, 12, 13]);
 }
 
@@ -303,8 +303,8 @@ fn double_reverse_is_identity() {
     g2.reverse();
     g2.reverse();
     for eix in g1.edge_indices() {
-        let eps1 = g1.endpoints(eix);
-        let eps2 = g2.endpoints(eix);
+        let eps1 = g1.endpoints(*eix);
+        let eps2 = g2.endpoints(*eix);
         assert_eq!(eps1, eps2);
     }
 }
@@ -316,8 +316,8 @@ fn remove_edge_keeps_nodes() {
     let mut g = diamond_btree();
     g.remove_edge(10);
     assert!(!g.contains_edge_index(10));
-    assert!(g.contains_node_index(0));
-    assert!(g.contains_node_index(1));
+    assert!(g.contains_node_index(&0));
+    assert!(g.contains_node_index(&1));
     // remaining outgoing from 0: only edge 11
     let out: Vec<u32> = g.edge_indices_from(0).collect();
     assert_eq!(out, vec![11]);
@@ -328,7 +328,7 @@ fn remove_node_cascades_edges() {
     let mut g = diamond_btree();
     // node 1 is involved in edges 10(0->1) and 12(1->3)
     g.remove_node(1);
-    assert!(!g.contains_node_index(1));
+    assert!(!g.contains_node_index(&1));
     assert!(!g.contains_edge_index(10));
     assert!(!g.contains_edge_index(12));
     // edges 11(0->2) and 13(2->3) survive
@@ -340,13 +340,13 @@ fn remove_node_cascades_edges() {
 fn remove_all_nodes_empties_graph() {
     let mut g = diamond_btree();
     for n in [0, 1, 2, 3] {
-        if g.contains_node_index(n) {
+        if g.contains_node_index(&n) {
             g.remove_node(n);
         }
     }
-    let nodes: Vec<u32> = g.node_indices().collect();
+    let nodes: Vec<u32> = g.node_indices().copied().collect();
     assert!(nodes.is_empty());
-    let edges: Vec<u32> = g.edge_indices().collect();
+    let edges: Vec<u32> = g.edge_indices().copied().collect();
     assert!(edges.is_empty());
 }
 
@@ -373,7 +373,7 @@ fn get_or_insert_node_vacant() {
     let mut g = BTreeGraph::<u32, u32>::default();
     let node = g.get_or_insert_node(10);
     assert_eq!(node, 10);
-    assert!(g.contains_node_index(10));
+    assert!(g.contains_node_index(&10));
 }
 
 #[test]
@@ -501,8 +501,8 @@ fn scope_mut_insert_node() {
         let _ = ctx.insert_node(1).unwrap();
         assert_eq!(ctx.node_indices().count(), 2);
     });
-    assert!(g.contains_node_index(0));
-    assert!(g.contains_node_index(1));
+    assert!(g.contains_node_index(&0));
+    assert!(g.contains_node_index(&1));
 }
 
 #[test]
@@ -513,7 +513,7 @@ fn scope_mut_get_or_insert_node() {
         assert!(ctx.node_index(42).is_some());
         assert!(ctx.node_index(99).is_none());
     });
-    assert!(g.contains_node_index(42));
+    assert!(g.contains_node_index(&42));
 }
 
 #[test]
@@ -550,7 +550,7 @@ fn self_loop_edge() {
 #[test]
 fn empty_graph() {
     let g = BTreeGraph::<u32, u32>::default();
-    assert!(!g.contains_node_index(0));
+    assert!(!g.contains_node_index(&0));
     assert!(!g.contains_edge_index(0));
     assert_eq!(g.node_indices().count(), 0);
     assert_eq!(g.edge_indices().count(), 0);
@@ -566,7 +566,7 @@ fn string_keyed_graph() {
     g.insert_node(10).unwrap();
     g.insert_node(20).unwrap();
     g.insert_edge(99, [10, 20]).unwrap();
-    assert!(g.contains_node_index(10));
+    assert!(g.contains_node_index(&10));
     assert_eq!(*g.edge(99), 99);
 }
 
@@ -655,9 +655,9 @@ fn map_identity() {
 
     let mapped = g.map(|n| n, |e| e);
 
-    assert!(mapped.contains_node_index(0));
-    assert!(mapped.contains_node_index(1));
-    assert!(mapped.contains_node_index(2));
+    assert!(mapped.contains_node_index(&0));
+    assert!(mapped.contains_node_index(&1));
+    assert!(mapped.contains_node_index(&2));
     assert!(mapped.contains_edge_index(10));
     assert!(mapped.contains_edge_index(11));
 
@@ -677,8 +677,8 @@ fn map_transform() {
     // remaps indices and rewires the stored endpoints accordingly.
     let mapped = g.map(|n| n * 10, |e| e + 1);
 
-    assert!(mapped.contains_node_index(0));
-    assert!(mapped.contains_node_index(10));
+    assert!(mapped.contains_node_index(&0));
+    assert!(mapped.contains_node_index(&10));
     assert!(mapped.contains_edge_index(5));
 
     let eps = mapped.endpoints(5);
@@ -723,7 +723,7 @@ fn take_nodes_edges_removes_edges_only() {
     assert!(g.contains_edge_index(11));
     assert!(g.contains_edge_index(12));
     for n in [0, 1, 2, 3] {
-        assert!(g.contains_node_index(n));
+        assert!(g.contains_node_index(&n));
     }
 }
 
@@ -734,7 +734,7 @@ fn take_nodes_edges_removes_nodes_cascades() {
     let (nodes, edges): (Vec<u32>, Vec<u32>) = g.take_nodes_edges([1], []);
     assert_eq!(nodes, vec![1]);
     assert!(edges.is_empty());
-    assert!(!g.contains_node_index(1));
+    assert!(!g.contains_node_index(&1));
     assert!(!g.contains_edge_index(10));
     assert!(!g.contains_edge_index(12));
     assert!(g.contains_edge_index(11));
@@ -748,13 +748,13 @@ fn take_nodes_edges_both_nodes_and_edges() {
     let (nodes, edges): (Vec<u32>, Vec<u32>) = g.take_nodes_edges([3], [11]);
     assert_eq!(nodes, vec![3]);
     assert_eq!(edges, vec![11]);
-    assert!(!g.contains_node_index(3));
+    assert!(!g.contains_node_index(&3));
     assert!(!g.contains_edge_index(11));
     assert!(!g.contains_edge_index(12));
     assert!(!g.contains_edge_index(13));
-    assert!(g.contains_node_index(0));
-    assert!(g.contains_node_index(1));
-    assert!(g.contains_node_index(2));
+    assert!(g.contains_node_index(&0));
+    assert!(g.contains_node_index(&1));
+    assert!(g.contains_node_index(&2));
     assert!(g.contains_edge_index(10));
 }
 
@@ -801,7 +801,7 @@ fn take_nodes_edges_self_loop() {
     assert_eq!(edges, vec![10]);
     assert!(!g.contains_edge_index(10));
     assert!(g.contains_edge_index(20));
-    assert!(g.contains_node_index(0));
+    assert!(g.contains_node_index(&0));
 }
 
 #[test]
