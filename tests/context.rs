@@ -131,3 +131,51 @@ fn scope_incident_indices_btree() {
         assert_eq!(inc.len(), 2);
     });
 }
+
+/// Yields the wrapped items but claims at most one (`size_hint` is only a hint).
+struct LyingSizeHint<I>(I);
+
+impl<I: Iterator> Iterator for LyingSizeHint<I> {
+    type Item = I::Item;
+    fn next(&mut self) -> Option<I::Item> {
+        self.0.next()
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some(1))
+    }
+}
+
+#[test]
+fn take_nodes_edges_ignores_wrong_size_hint_for_edges() {
+    let mut g = VecGraph::<u32, u32>::default();
+    g.scope_mut(|mut ctx| {
+        let a = ctx.insert_node(1).unwrap();
+        let b = ctx.insert_node(2).unwrap();
+        let e0 = ctx.insert_edge(10, [a, b]).unwrap();
+        let e1 = ctx.insert_edge(20, [b, a]).unwrap();
+        let (_, mut edges): (Vec<u32>, Vec<u32>) =
+            ctx.take_nodes_edges(None, LyingSizeHint(vec![e0, e1].into_iter()));
+        edges.sort_unstable();
+        assert_eq!(edges, [10, 20]);
+    });
+    assert_eq!(g.len_edge(), 0);
+    assert_eq!(g.len_node(), 2);
+}
+
+#[test]
+fn take_nodes_edges_ignores_wrong_size_hint_for_nodes() {
+    let mut g = VecGraph::<u32, u32>::default();
+    g.scope_mut(|mut ctx| {
+        let a = ctx.insert_node(1).unwrap();
+        let b = ctx.insert_node(2).unwrap();
+        let c = ctx.insert_node(3).unwrap();
+        ctx.insert_edge(10, [a, c]).unwrap();
+        let (mut nodes, _): (Vec<u32>, Vec<u32>) =
+            ctx.take_nodes_edges(LyingSizeHint(vec![a, c].into_iter()), None);
+        nodes.sort_unstable();
+        assert_eq!(nodes, [1, 3]);
+        let _ = b;
+    });
+    assert_eq!(g.len_node(), 1);
+    assert_eq!(g.len_edge(), 0);
+}
