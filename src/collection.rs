@@ -22,6 +22,7 @@
 
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap, LinkedList};
+use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 use crate::unwrap_unchecked;
@@ -684,11 +685,14 @@ where
     fn indices(&'a self) -> Self::Indices;
 
     /// Item of [`index_refs`](Self::index_refs): `&'a Index` or an owned `Index`.
-    type IndexRef: Borrow<Self::Index>;
+    type IndexRef: Borrow<Self::Index> + Clone + Eq + Ord + Hash + Display + Debug;
     type IndexRefs: Iterator<Item = Self::IndexRef>;
 
     /// Like [`indices`](Self::indices), but without cloning stored keys.
     fn index_refs(&'a self) -> Self::IndexRefs;
+
+    /// Converts a borrowed stored index into an [`IndexRef`](Self::IndexRef).
+    fn index_ref(ix: &'a Self::Index) -> Self::IndexRef;
 }
 
 impl<'a, V: 'a, S: 'a> RandomAccessRef<'a> for Vec<(V, S)> {
@@ -704,6 +708,11 @@ impl<'a, V: 'a, S: 'a> RandomAccessRef<'a> for Vec<(V, S)> {
     #[inline]
     fn index_refs(&'a self) -> Self::IndexRefs {
         self.indices()
+    }
+
+    #[inline]
+    fn index_ref(ix: &'a u32) -> u32 {
+        *ix
     }
 }
 
@@ -721,9 +730,14 @@ impl<'a, 'b: 'a, V: Clone + 'a, S: Clone + 'a> RandomAccessRef<'a> for &'b mut [
     fn index_refs(&'a self) -> Self::IndexRefs {
         self.indices()
     }
+
+    #[inline]
+    fn index_ref(ix: &'a u32) -> u32 {
+        *ix
+    }
 }
 
-impl<'a, I: IndexKey + 'a, S: 'a> RandomAccessRef<'a> for BTreeMap<I, S> {
+impl<'a, I: IndexKey + Display + Debug + 'a, S: 'a> RandomAccessRef<'a> for BTreeMap<I, S> {
     type Indices = std::iter::Cloned<std::collections::btree_map::Keys<'a, I, S>>;
 
     #[inline]
@@ -737,9 +751,14 @@ impl<'a, I: IndexKey + 'a, S: 'a> RandomAccessRef<'a> for BTreeMap<I, S> {
     fn index_refs(&'a self) -> Self::IndexRefs {
         self.keys()
     }
+
+    #[inline]
+    fn index_ref(ix: &'a I) -> &'a I {
+        ix
+    }
 }
 
-impl<'a, I: IndexKey + 'a, S: 'a> RandomAccessRef<'a> for HashMap<I, S> {
+impl<'a, I: IndexKey + Display + Debug + 'a, S: 'a> RandomAccessRef<'a> for HashMap<I, S> {
     type Indices = std::iter::Cloned<std::collections::hash_map::Keys<'a, I, S>>;
 
     #[inline]
@@ -752,6 +771,11 @@ impl<'a, I: IndexKey + 'a, S: 'a> RandomAccessRef<'a> for HashMap<I, S> {
     #[inline]
     fn index_refs(&'a self) -> Self::IndexRefs {
         self.keys()
+    }
+
+    #[inline]
+    fn index_ref(ix: &'a I) -> &'a I {
+        ix
     }
 }
 

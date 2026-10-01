@@ -62,6 +62,7 @@
 //! // pairs include (0,1), (0,3), (1,3)
 //! ```
 
+use std::borrow::Borrow;
 use std::collections::HashSet;
 
 use crate::graph::capability::{Bigraph, Directed, StableEdge, StableNode};
@@ -83,7 +84,7 @@ pub fn dag_transitive_reduction<'r, G>(
     graph: &'r G,
 ) -> DagTransitiveReduction<'r, G, super::OwnedEdgeIndices<'r, G>>
 where
-    G: Graph + Directed<'r> + Bigraph + StableEdge + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableEdge + ?Sized,
 {
     DagTransitiveReduction {
         graph,
@@ -93,15 +94,19 @@ where
 
 impl<'r, G> Iterator for DagTransitiveReduction<'r, G, super::OwnedEdgeIndices<'r, G>>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
 {
     type Item = G::EdgeIx;
 
     fn next(&mut self) -> Option<G::EdgeIx> {
         loop {
             let eix = self.edges.next()?;
-            let tail = unsafe { self.graph.edge_tail_index_unchecked(eix.clone()) };
-            let head = unsafe { self.graph.edge_head_index_unchecked(eix.clone()) };
+            let tail: G::NodeIx = unsafe { self.graph.tail_index_unchecked(&eix) }
+                .borrow()
+                .clone();
+            let head: G::NodeIx = unsafe { self.graph.head_index_unchecked(&eix) }
+                .borrow()
+                .clone();
 
             let mut reachable_via_other = false;
             for other_eix in unsafe {
@@ -109,10 +114,13 @@ where
                     self.graph, &tail,
                 )
             } {
-                if other_eix == eix {
+                let other_eix: &G::EdgeIx = other_eix.borrow();
+                if *other_eix == eix {
                     continue;
                 }
-                let other_head = unsafe { self.graph.edge_head_index_unchecked(other_eix) };
+                let other_head: G::NodeIx = unsafe { self.graph.head_index_unchecked(other_eix) }
+                    .borrow()
+                    .clone();
                 if unsafe { can_reach(self.graph, other_head, head.clone()) } {
                     reachable_via_other = true;
                     break;
@@ -146,7 +154,7 @@ pub struct DagTransitiveClosure<'r, G: ?Sized, N> {
 /// Returns an iterator over all `(source, target)` reachability pairs in the DAG.
 pub fn dag_transitive_closure<'r, G>(graph: &'r G) -> DagTransitiveClosure<'r, G, G::NodeIx>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     let nodes: Vec<G::NodeIx> = super::owned_node_indices(graph).collect();
     DagTransitiveClosure {
@@ -162,7 +170,7 @@ where
 
 impl<'r, G> Iterator for DagTransitiveClosure<'r, G, G::NodeIx>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     type Item = (G::NodeIx, G::NodeIx);
 
@@ -205,7 +213,7 @@ where
 /// Helper: check if `target` is reachable from `source` via DFS.
 unsafe fn can_reach<'r, G>(graph: &'r G, source: G::NodeIx, target: G::NodeIx) -> bool
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     if source == target {
         return true;

@@ -45,8 +45,8 @@ fn insert_nodes() {
     let mut g = new_graph();
     let n0 = g.insert_node(10).unwrap();
     let n1 = g.insert_node(20).unwrap();
-    assert!(g.contains_node_index(&n0));
-    assert!(g.contains_node_index(&n1));
+    assert!(g.contains_node_index(n0));
+    assert!(g.contains_node_index(n1));
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn insert_edge_and_endpoints() {
     let n1 = g.insert_node(1).unwrap();
     let eix = g.insert_edge(10, [n0, n1]).unwrap();
     assert!(g.contains_edge_index(eix));
-    let eps = g.endpoints(eix);
+    let eps: Vec<_> = g.endpoints(eix).collect();
     assert_eq!(eps[0], n0);
     assert_eq!(eps[1], n1);
 }
@@ -144,8 +144,8 @@ fn edge_tail_and_head() {
     let mut g = new_graph();
     let (ns, es) = diamond_on(&mut g);
     // edge 0 (10): 0->1
-    assert_eq!(g.edge_tail_index(es[0]), ns[0]);
-    assert_eq!(g.edge_head_index(es[0]), ns[1]);
+    assert_eq!(g.tail_index(es[0]), ns[0]);
+    assert_eq!(g.head_index(es[0]), ns[1]);
 }
 
 #[test]
@@ -153,9 +153,9 @@ fn edge_tail_node_and_head_item() {
     let mut g = new_graph();
     let (_, es) = diamond_on(&mut g);
     // edge 2 (12): 1->3
-    let tail_nodes: Vec<_> = g.edge_tail_indices(es[2]).collect();
+    let tail_nodes: Vec<_> = g.tail_indices(es[2]).collect();
     assert_eq!(tail_nodes.len(), 1);
-    let head_nodes: Vec<_> = g.edge_head_indices(es[2]).collect();
+    let head_nodes: Vec<_> = g.head_indices(es[2]).collect();
     assert_eq!(head_nodes.len(), 1);
 }
 
@@ -221,8 +221,8 @@ fn reverse_swaps_direction() {
     let (ns, es) = diamond_on(&mut g);
     g.reverse();
     // edge 0 (10): was 0->1, now 1->0
-    assert_eq!(g.edge_tail_index(es[0]), ns[1]);
-    assert_eq!(g.edge_head_index(es[0]), ns[0]);
+    assert_eq!(g.tail_index(es[0]), ns[1]);
+    assert_eq!(g.head_index(es[0]), ns[0]);
 }
 
 #[test]
@@ -234,8 +234,8 @@ fn double_reverse_is_identity() {
     g2.reverse();
     g2.reverse();
     for eix in &es {
-        let eps1 = g1.endpoints(*eix);
-        let eps2 = g2.endpoints(*eix);
+        let eps1: Vec<_> = g1.endpoints(*eix).collect();
+        let eps2: Vec<_> = g2.endpoints(*eix).collect();
         assert_eq!(eps1, eps2);
     }
 }
@@ -253,8 +253,8 @@ fn remove_edge_basic() {
     g.remove_edge(e0);
     assert_eq!(g.edge_indices().count(), 1);
     // nodes survive
-    assert!(g.contains_node_index(&n0));
-    assert!(g.contains_node_index(&n1));
+    assert!(g.contains_node_index(n0));
+    assert!(g.contains_node_index(n1));
 }
 
 #[test]
@@ -276,7 +276,7 @@ fn self_loop_edge() {
     let mut g = new_graph();
     let n0 = g.insert_node(0).unwrap();
     let e0 = g.insert_edge(10, [n0, n0]).unwrap();
-    let eps = g.endpoints(e0);
+    let eps: Vec<_> = g.endpoints(e0).collect();
     assert_eq!(eps[0], n0);
     assert_eq!(eps[1], n0);
     let out: Vec<_> = g.edge_indices_from(n0).collect();
@@ -308,7 +308,7 @@ fn scope_read_only() {
         let edges: Vec<_> = ctx.edge_indices().collect();
         assert_eq!(edges.len(), 4);
 
-        let [from, to] = ctx.endpoints(edges[0]);
+        let (from, to) = (ctx.tail_index(edges[0]), ctx.head_index(edges[0]));
         assert_eq!(
             *ctx.node(from) + *ctx.node(to),
             *ctx.node(from) + *ctx.node(to)
@@ -384,15 +384,15 @@ fn incidents_returns_refs() {
     assert_eq!(inc.len(), 2);
 }
 
-// ---- edge_tails / edge_heads iterators ----
+// ---- tails / heads iterators ----
 
 #[test]
 fn edge_tails_and_heads_iterators() {
     let mut g = new_graph();
     let (_, es) = diamond_on(&mut g);
-    let tails: Vec<_> = g.edge_tail_indices(es[1]).collect();
+    let tails: Vec<_> = g.tail_indices(es[1]).collect();
     assert_eq!(tails.len(), 1);
-    let heads: Vec<_> = g.edge_head_indices(es[1]).collect();
+    let heads: Vec<_> = g.head_indices(es[1]).collect();
     assert_eq!(heads.len(), 1);
 }
 
@@ -400,9 +400,9 @@ fn edge_tails_and_heads_iterators() {
 fn edge_tail_nodes_and_head_nodes() {
     let mut g = new_graph();
     let (_, es) = diamond_on(&mut g);
-    let tn: Vec<_> = g.edge_tail_indices(es[2]).collect();
+    let tn: Vec<_> = g.tail_indices(es[2]).collect();
     assert_eq!(tn.len(), 1);
-    let hn: Vec<_> = g.edge_head_indices(es[2]).collect();
+    let hn: Vec<_> = g.head_indices(es[2]).collect();
     assert_eq!(hn.len(), 1);
 }
 
@@ -486,7 +486,7 @@ fn take_nodes_edges_removes_edges_only() {
     assert!(g.contains_edge_index(e1));
     assert!(g.contains_edge_index(e2));
     for n in [n0, n1, n2, n3] {
-        assert!(g.contains_node_index(&n));
+        assert!(g.contains_node_index(n));
     }
 }
 
@@ -497,10 +497,10 @@ fn take_nodes_edges_removes_nodes_cascades() {
     let (nodes, edges): (Vec<u32>, Vec<u32>) = g.take_nodes_edges([n1], []);
     assert_eq!(nodes, vec![1]);
     assert!(edges.is_empty());
-    assert!(!g.contains_node_index(&n1));
+    assert!(!g.contains_node_index(n1));
     assert!(!g.contains_edge_index(e0));
     assert!(!g.contains_edge_index(e2));
-    assert!(g.contains_node_index(&n0));
+    assert!(g.contains_node_index(n0));
     assert!(g.contains_edge_index(e1));
     assert!(g.contains_edge_index(e3));
 }
@@ -512,13 +512,13 @@ fn take_nodes_edges_both_nodes_and_edges() {
     let (nodes, edges): (Vec<u32>, Vec<u32>) = g.take_nodes_edges([n3], [e1]);
     assert_eq!(nodes, vec![3]);
     assert_eq!(edges, vec![11]);
-    assert!(!g.contains_node_index(&n3));
+    assert!(!g.contains_node_index(n3));
     assert!(!g.contains_edge_index(e1));
     assert!(!g.contains_edge_index(e2));
     assert!(!g.contains_edge_index(e3));
-    assert!(g.contains_node_index(&n0));
-    assert!(g.contains_node_index(&n1));
-    assert!(g.contains_node_index(&n2));
+    assert!(g.contains_node_index(n0));
+    assert!(g.contains_node_index(n1));
+    assert!(g.contains_node_index(n2));
     assert!(g.contains_edge_index(e0));
 }
 
@@ -530,7 +530,7 @@ fn take_nodes_edges_empty_is_noop() {
     assert!(nodes.is_empty());
     assert!(edges.is_empty());
     for n in ns {
-        assert!(g.contains_node_index(&n));
+        assert!(g.contains_node_index(n));
     }
     for e in es {
         assert!(g.contains_edge_index(e));
@@ -573,7 +573,7 @@ fn take_nodes_edges_self_loop() {
     assert_eq!(edges, vec![10]);
     assert!(!g.contains_edge_index(e_loop));
     assert!(g.contains_edge_index(e_norm));
-    assert!(g.contains_node_index(&n0));
+    assert!(g.contains_node_index(n0));
 }
 
 #[test]
@@ -596,7 +596,7 @@ fn remove_then_reinsert() {
     // reinsert — the index may differ but data should be correct
     let e1 = g.insert_edge(20, [n0, n1]).unwrap();
     assert_eq!(*g.edge(e1), 20);
-    let eps = g.endpoints(e1);
+    let eps: Vec<_> = g.endpoints(e1).collect();
     assert_eq!(eps[0], n0);
     assert_eq!(eps[1], n1);
 }

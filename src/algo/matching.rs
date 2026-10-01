@@ -67,6 +67,7 @@
 //! assert_eq!(maximum.len(), 1);
 //! ```
 
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 use crate::graph::capability::{Bigraph, StableEdge};
@@ -120,12 +121,10 @@ where
         loop {
             let eix = self.edges.next()?;
             let eps: Vec<G::NodeIx> = unsafe {
-                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
-                    self.graph,
-                    eix.clone(),
-                )
+                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, &eix)
             }
             .into_iter()
+            .map(|n| n.borrow().clone())
             .collect();
             let (a, b) = (eps[0].clone(), eps[1].clone());
 
@@ -158,11 +157,11 @@ where
     let mut adj: Adjacency<G> = HashMap::new();
 
     for eix in super::owned_edge_indices(graph) {
-        let eps: Vec<G::NodeIx> = unsafe {
-            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix.clone())
-        }
-        .into_iter()
-        .collect();
+        let eps: Vec<G::NodeIx> =
+            unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, &eix) }
+                .into_iter()
+                .map(|n| n.borrow().clone())
+                .collect();
         let (a, b) = (eps[0].clone(), eps[1].clone());
         if a == b {
             continue; // Skip self-loops
@@ -178,11 +177,11 @@ where
     let mut in_matching: HashSet<G::EdgeIx> = HashSet::new();
 
     for eix in super::owned_edge_indices(graph) {
-        let eps: Vec<G::NodeIx> = unsafe {
-            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix.clone())
-        }
-        .into_iter()
-        .collect();
+        let eps: Vec<G::NodeIx> =
+            unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, &eix) }
+                .into_iter()
+                .map(|n| n.borrow().clone())
+                .collect();
         let (a, b) = (eps[0].clone(), eps[1].clone());
         if a == b {
             continue;
@@ -223,12 +222,10 @@ where
                 match_of.clear();
                 for eix in in_matching.iter().cloned() {
                     let eps: Vec<G::NodeIx> = unsafe {
-                        <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
-                            graph,
-                            eix.clone(),
-                        )
+                        <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, &eix)
                     }
                     .into_iter()
+                    .map(|n| n.borrow().clone())
                     .collect();
                     let (a, b) = (eps[0].clone(), eps[1].clone());
                     match_of.insert(a.clone(), (eix.clone(), b.clone()));
@@ -426,10 +423,10 @@ mod tests {
         let m = max_matching(&g);
         let mut used_nodes: HashSet<i32> = HashSet::new();
         for &eix in &m {
-            let tail = g.edge_tail_index(eix);
-            let head = g.edge_head_index(eix);
-            assert!(used_nodes.insert(tail), "Node {:?} used twice", tail);
-            assert!(used_nodes.insert(head), "Node {:?} used twice", head);
+            let tail = g.tail_index(eix);
+            let head = g.head_index(eix);
+            assert!(used_nodes.insert(*tail), "Node {:?} used twice", tail);
+            assert!(used_nodes.insert(*head), "Node {:?} used twice", head);
         }
         assert_eq!(m.len(), 2);
     }

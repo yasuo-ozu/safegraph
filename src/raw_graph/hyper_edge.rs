@@ -293,8 +293,8 @@ where
         self.nodes.contains_index(node_ix)
     }
 
-    fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool {
-        self.edges.contains_index(&edge_ix)
+    fn contains_edge_index(&self, edge_ix: &Self::EdgeIx) -> bool {
+        self.edges.contains_index(edge_ix)
     }
 
     fn len_node(&self) -> usize {
@@ -305,16 +305,17 @@ where
         Collection::len(&self.edges)
     }
 
-    type NodeIxRef = <NC as RandomAccessRef<'r>>::IndexRef;
-    type NodeIndices = <NC as RandomAccessRef<'r>>::IndexRefs;
+    // `VIx`/`EIx: Copy`, so lending references would save nothing.
+    type NodeIxRef = VIx;
+    type NodeIndices = <NC as RandomAccessRef<'r>>::Indices;
     fn node_indices(&'r self) -> Self::NodeIndices {
-        self.nodes.index_refs()
+        self.nodes.indices()
     }
 
-    type EdgeIxRef = <EC as RandomAccessRef<'r>>::IndexRef;
-    type EdgeIndices = <EC as RandomAccessRef<'r>>::IndexRefs;
+    type EdgeIxRef = EIx;
+    type EdgeIndices = <EC as RandomAccessRef<'r>>::Indices;
     fn edge_indices(&'r self) -> Self::EdgeIndices {
-        self.edges.index_refs()
+        self.edges.indices()
     }
 
     unsafe fn node_unchecked(&self, node_ix: &Self::NodeIx) -> &Self::Node {
@@ -325,8 +326,10 @@ where
         unsafe { self.edges.get_value_unchecked(edge_ix) }
     }
 
-    unsafe fn endpoints_unchecked(&self, edge_ix: Self::EdgeIx) -> Self::Endpoints {
-        unsafe { self.edges.get_storage_unchecked(&edge_ix) }.clone()
+    type EndpointsRef = ES;
+
+    unsafe fn endpoints_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::EndpointsRef {
+        unsafe { self.edges.get_storage_unchecked(edge_ix) }.clone()
     }
 
     type EdgeIndicesFrom = EdgeIndicesFromIter<<IS as IncidenceSetRef<'r, EIx>>::Iter>;
@@ -341,13 +344,14 @@ where
     }
 
     type EdgeIndicesOf = EdgeIndicesFromIter<<IS as IncidenceSetRef<'r, EIx>>::Iter>;
-    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesOf {
+    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesOf {
         // Undirected: same as edge_indices_from.
-        unsafe { self.edge_indices_from_unchecked(&node_ix) }
+        unsafe { self.edge_indices_from_unchecked(node_ix) }
     }
 
     type WalksFrom = Walks<'r, NC, EC, VIx, EIx, IS, ES>;
-    unsafe fn walks_from_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksFrom {
+    unsafe fn walks_from_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksFrom {
+        let node_ix = *node_ix;
         let storage = unsafe { self.nodes.get_storage_unchecked(&node_ix) };
         Walks {
             origin: node_ix,
@@ -359,7 +363,7 @@ where
     }
 
     type WalksOf = Walks<'r, NC, EC, VIx, EIx, IS, ES>;
-    unsafe fn walks_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksOf {
+    unsafe fn walks_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksOf {
         // Undirected: identical to walks_from.
         unsafe { self.walks_from_unchecked(node_ix) }
     }
@@ -425,8 +429,10 @@ impl<'r, NC, EC, V, E, VIx, EIx, IS, ES> UpdateNode<'r> for HyperGraph<NC, EC>
 where
     NC: UpdatableRandomAccess<Index = VIx, Value = V, Storage = IS> + 'r,
     EC: RandomAccess<Index = EIx, Value = E, Storage = ES> + 'r,
-    IS: IncidenceSet<EIx> + 'static,
+    IS: IncidenceSet<EIx> + for<'a> IncidenceSetRef<'a, EIx> + 'static,
     ES: Endpoints<NodeIx = VIx> + 'r,
+    for<'a> NC: RandomAccessRef<'a>,
+    for<'a> EC: RandomAccessRef<'a>,
     VIx: Copy + IndexKey + Display + Debug + 'static,
     EIx: Copy + IndexKey + Display + Debug + 'static,
     V: 'r,
@@ -437,12 +443,15 @@ where
     }
 
     type WalksFromMut = std::iter::Empty<WalkItemMut<'r, EIx, E, VIx>>;
-    unsafe fn walks_from_unchecked_mut(&'r mut self, _node_ix: Self::NodeIx) -> Self::WalksFromMut {
+    unsafe fn walks_from_unchecked_mut(
+        &'r mut self,
+        _node_ix: &Self::NodeIx,
+    ) -> Self::WalksFromMut {
         std::iter::empty()
     }
 
     type WalksOfMut = std::iter::Empty<WalkItemMut<'r, EIx, E, VIx>>;
-    unsafe fn walks_of_unchecked_mut(&'r mut self, _node_ix: Self::NodeIx) -> Self::WalksOfMut {
+    unsafe fn walks_of_unchecked_mut(&'r mut self, _node_ix: &Self::NodeIx) -> Self::WalksOfMut {
         std::iter::empty()
     }
 }
@@ -622,10 +631,10 @@ where
     EIx: Copy + IndexKey + Display + Debug + 'static,
     V: PartialEq,
 {
-    fn node_index(&self, node: impl core::borrow::Borrow<Self::Node>) -> Option<Self::NodeIx> {
+    fn node_index(&self, node: &Self::Node) -> Option<Self::NodeIx> {
         // SAFETY: CollectionBiject contract guarantees an inverse lookup
         // when the node value is present.
-        unsafe { self.nodes.value_to_key_unchecked(node.borrow()) }.copied()
+        unsafe { self.nodes.value_to_key_unchecked(node) }.copied()
     }
 }
 
@@ -641,7 +650,7 @@ where
     EIx: Copy + IndexKey + Display + Debug + 'static,
     E: PartialEq,
 {
-    fn edge_index(&self, edge: impl core::borrow::Borrow<Self::Edge>) -> Option<Self::EdgeIx> {
-        unsafe { self.edges.value_to_key_unchecked(edge.borrow()) }.copied()
+    fn edge_index(&self, edge: &Self::Edge) -> Option<Self::EdgeIx> {
+        unsafe { self.edges.value_to_key_unchecked(edge) }.copied()
     }
 }

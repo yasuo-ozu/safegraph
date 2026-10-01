@@ -73,10 +73,10 @@ pub struct Dominators<N> {
 /// The `start` node dominates itself (mapped to itself).
 pub fn dominators<'r, G>(graph: &'r G, start: G::NodeIx) -> Dominators<G::NodeIx>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     // Validate the user-supplied start index (panics if invalid).
-    let _ = graph.node(start.clone());
+    let _ = graph.node(&start);
     // SAFETY: `StableNode` guarantees the node indices stay valid for the call,
     // and `start` was validated above.
     unsafe { dominators_unchecked(graph, start) }
@@ -89,7 +89,7 @@ where
 /// modified until the resulting NodeIx is accessed.
 pub unsafe fn dominators_unchecked<'r, G>(graph: &'r G, start: G::NodeIx) -> Dominators<G::NodeIx>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     // Step 1: Compute reverse post-order via DFS from `start`.
     let mut visited = std::collections::HashSet::new();

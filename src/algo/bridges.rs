@@ -67,6 +67,7 @@
 //! assert_eq!(cut_vertices.len(), 1);
 //! ```
 
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 use crate::graph::capability::{Bigraph, StableEdge, StableNode};
@@ -311,14 +312,12 @@ where
 {
     let mut neighbors = Vec::new();
 
-    for eix in
-        <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, node.clone())
-    {
-        for endpoint in
-            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix.clone())
-        {
-            if endpoint != node {
-                neighbors.push((eix.clone(), endpoint));
+    for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, &node) {
+        let eix: &G::EdgeIx = eix.borrow();
+        for endpoint in <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix) {
+            let endpoint = endpoint.borrow();
+            if *endpoint != node {
+                neighbors.push((eix.clone(), endpoint.clone()));
             }
         }
     }

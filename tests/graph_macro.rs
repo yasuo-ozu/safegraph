@@ -76,7 +76,7 @@ fn graph_macro_supports_multiple_forward_arrows_in_one_line() {
     assert_eq!(edges, vec![0, 0]);
     let edgepoints: Vec<(u32, u32)> = GraphOperation::edge_indices(&g)
         .map(|e| {
-            let [s, t] = g.endpoints(e);
+            let (s, t) = (g.tail_index(e), g.head_index(e));
             (*g.node(s), *g.node(t))
         })
         .collect();
@@ -93,7 +93,7 @@ fn graph_macro_supports_mixed_forward_and_reverse_arrows_in_one_line() {
     assert_eq!(edges, vec![0, 0]);
     let edgepoints: Vec<(u32, u32)> = GraphOperation::edge_indices(&g)
         .map(|e| {
-            let [s, t] = g.endpoints(e);
+            let (s, t) = (g.tail_index(e), g.head_index(e));
             (*g.node(s), *g.node(t))
         })
         .collect();

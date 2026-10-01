@@ -158,17 +158,25 @@ where
             .collect();
         let nodes: Vec<_> = indices
             .iter()
-            .map(|index| sanitize(node_label(ctx.node(index.clone())).into()))
+            .map(|index| sanitize(node_label(ctx.node(index)).into()))
             .collect();
         let mut edges = Vec::new();
         for edge_index in crate::algo::owned_edge_indices(ctx) {
-            let mut endpoints = ctx.endpoints(edge_index.clone()).into_iter();
-            let from = index_map[&endpoints.next().unwrap()];
-            let to = index_map[&endpoints.next().unwrap()];
+            let mut endpoints = ctx.endpoints(&edge_index).into_iter();
+            let from = position(&index_map, endpoints.next().unwrap());
+            let to = position(&index_map, endpoints.next().unwrap());
             edges.push((from, to, sanitize(edge_label(ctx.edge(edge_index)).into())));
         }
         render(nodes, edges, G::DIRECTED, maximum_width)
     })
+}
+
+/// Looks up a node's position through a borrowed index handle (no clone).
+fn position<K: Eq + std::hash::Hash, R: std::borrow::Borrow<K>>(
+    index_map: &HashMap<K, usize>,
+    nix: R,
+) -> usize {
+    index_map[nix.borrow()]
 }
 
 pub use to_aa as to_ascii;

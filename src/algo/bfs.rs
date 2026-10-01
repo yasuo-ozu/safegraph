@@ -47,6 +47,7 @@
 //! assert_eq!(order, vec![0, 1, 2]);
 //! ```
 
+use std::borrow::Borrow;
 use std::collections::{HashSet, VecDeque};
 
 use crate::graph::capability::StableNode;
@@ -135,10 +136,15 @@ where
             <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, &node)
         } {
             for endpoint in unsafe {
-                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix)
+                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
+                    self.graph,
+                    eix.borrow(),
+                )
             } {
-                if endpoint != node && self.visited.insert(endpoint.clone()) {
-                    self.queue.push_back(endpoint);
+                let endpoint = endpoint.borrow();
+                if *endpoint != node && !self.visited.contains(endpoint) {
+                    self.visited.insert(endpoint.clone());
+                    self.queue.push_back(endpoint.clone());
                 }
             }
         }

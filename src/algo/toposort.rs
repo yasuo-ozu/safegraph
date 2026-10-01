@@ -76,7 +76,7 @@ impl<N: std::fmt::Debug> std::error::Error for CycleError<N> {}
 /// Returns `Err(CycleError)` if the graph contains a cycle.
 pub fn toposort<'r, G>(graph: &'r G) -> Result<Vec<G::NodeIx>, CycleError<G::NodeIx>>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     let mut order = reverse_toposort(graph)?;
     order.reverse();
@@ -91,7 +91,7 @@ where
 /// Returns `Err(CycleError)` if the graph contains a cycle.
 pub fn reverse_toposort<'r, G>(graph: &'r G) -> Result<Vec<G::NodeIx>, CycleError<G::NodeIx>>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     // States: 0 = unvisited, 1 = on stack (in progress), 2 = finished
     let mut state: HashMap<G::NodeIx, u8> = HashMap::new();
@@ -102,7 +102,7 @@ where
             continue;
         }
         let succs: Vec<G::NodeIx> =
-            unsafe { graph.neighbor_indices_from_unchecked(node.clone()) }.collect();
+            unsafe { graph.neighbor_indices_from_unchecked(&node) }.collect();
         let mut stack: Vec<(G::NodeIx, Vec<G::NodeIx>, usize)> = vec![(node.clone(), succs, 0)];
         state.insert(node, 1);
 
@@ -114,8 +114,7 @@ where
                     0 => {
                         state.insert(succ.clone(), 1);
                         let succ_succs: Vec<G::NodeIx> =
-                            unsafe { graph.neighbor_indices_from_unchecked(succ.clone()) }
-                                .collect();
+                            unsafe { graph.neighbor_indices_from_unchecked(&succ) }.collect();
                         stack.push((succ, succ_succs, 0));
                     }
                     1 => {
@@ -140,7 +139,7 @@ where
 /// Returns `Err(CycleError)` if the graph contains a cycle.
 pub fn toposort_kahn<'r, G>(graph: &'r G) -> Result<Vec<G::NodeIx>, CycleError<G::NodeIx>>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     let mut in_degree: HashMap<G::NodeIx, usize> = HashMap::new();
 

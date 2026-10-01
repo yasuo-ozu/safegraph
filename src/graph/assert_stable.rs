@@ -61,7 +61,7 @@ where
         self.inner.contains_node_index(node_ix)
     }
     #[inline]
-    fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool {
+    fn contains_edge_index(&self, edge_ix: &Self::EdgeIx) -> bool {
         self.inner.contains_edge_index(edge_ix)
     }
     #[inline]
@@ -102,8 +102,10 @@ where
     unsafe fn edge_unchecked(&self, edge_ix: &Self::EdgeIx) -> &Self::Edge {
         self.inner.edge_unchecked(edge_ix)
     }
+    type EndpointsRef = <G as GraphOperation<'r>>::EndpointsRef;
+
     #[inline]
-    unsafe fn endpoints_unchecked(&self, edge_ix: Self::EdgeIx) -> Self::Endpoints {
+    unsafe fn endpoints_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::EndpointsRef {
         self.inner.endpoints_unchecked(edge_ix)
     }
 
@@ -118,19 +120,19 @@ where
 
     type EdgeIndicesOf = <G as GraphOperation<'r>>::EdgeIndicesOf;
     #[inline]
-    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesOf {
+    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesOf {
         self.inner.edge_indices_of_unchecked(node_ix)
     }
 
     type WalksFrom = <G as GraphOperation<'r>>::WalksFrom;
     #[inline]
-    unsafe fn walks_from_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksFrom {
+    unsafe fn walks_from_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksFrom {
         self.inner.walks_from_unchecked(node_ix)
     }
 
     type WalksOf = <G as GraphOperation<'r>>::WalksOf;
     #[inline]
-    unsafe fn walks_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksOf {
+    unsafe fn walks_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksOf {
         self.inner.walks_of_unchecked(node_ix)
     }
 
@@ -163,26 +165,34 @@ where
     type WalksTo = <G as Directed<'r>>::WalksTo;
 
     #[inline]
-    unsafe fn walks_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksTo {
+    unsafe fn walks_to_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksTo {
         self.inner.walks_to_unchecked(node_ix)
     }
     #[inline]
-    unsafe fn edge_indices_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesTo {
+    unsafe fn edge_indices_to_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesTo {
         self.inner.edge_indices_to_unchecked(node_ix)
     }
     #[inline]
     unsafe fn edge_head_indices_unchecked(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: &Self::EdgeIx,
     ) -> Self::EdgeHeadIndices {
-        self.inner.edge_head_indices_unchecked(edge_ix)
+        <G as Directed<'r>>::edge_head_indices_unchecked(&self.inner, edge_ix)
+    }
+    #[inline]
+    unsafe fn edge_tail_index_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::NodeIxRef {
+        <G as Directed<'r>>::edge_tail_index_unchecked(&self.inner, edge_ix)
+    }
+    #[inline]
+    unsafe fn edge_head_index_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::NodeIxRef {
+        <G as Directed<'r>>::edge_head_index_unchecked(&self.inner, edge_ix)
     }
     #[inline]
     unsafe fn edge_tail_indices_unchecked(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: &Self::EdgeIx,
     ) -> Self::EdgeTailIndices {
-        self.inner.edge_tail_indices_unchecked(edge_ix)
+        <G as Directed<'r>>::edge_tail_indices_unchecked(&self.inner, edge_ix)
     }
 }
 
@@ -242,12 +252,12 @@ where
     }
 
     type WalksFromMut = <G as UpdateNode<'r>>::WalksFromMut;
-    unsafe fn walks_from_unchecked_mut(&'r mut self, node_ix: Self::NodeIx) -> Self::WalksFromMut {
+    unsafe fn walks_from_unchecked_mut(&'r mut self, node_ix: &Self::NodeIx) -> Self::WalksFromMut {
         <G as UpdateNode<'r>>::walks_from_unchecked_mut(&mut self.inner, node_ix)
     }
 
     type WalksOfMut = <G as UpdateNode<'r>>::WalksOfMut;
-    unsafe fn walks_of_unchecked_mut(&'r mut self, node_ix: Self::NodeIx) -> Self::WalksOfMut {
+    unsafe fn walks_of_unchecked_mut(&'r mut self, node_ix: &Self::NodeIx) -> Self::WalksOfMut {
         <G as UpdateNode<'r>>::walks_of_unchecked_mut(&mut self.inner, node_ix)
     }
 }

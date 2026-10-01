@@ -30,12 +30,23 @@
 //! [`scoped_adapter!`] macro with concrete types — not a generic `fn<G>` —
 //! to sidestep the heavy `G::Endpoints: for<'scope> Map<…>` HRTB bounds.
 
+use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
 use criterion::Bencher;
 use safegraph::graph::capability::InsertNode;
 use safegraph::graph::{Graph, GraphOperation, GraphProperty};
 use safegraph::raw_graph::flat_adj_edge::{FlatAdjEdgeGraph, NodeRepr as FlatNodeRepr, TNone};
+
+/// Clones a node index of `graph` out of a borrowed index handle.
+fn owned_node<C: GraphProperty + ?Sized, R: Borrow<C::NodeIx>>(_graph: &C, r: R) -> C::NodeIx {
+    r.borrow().clone()
+}
+
+/// Clones an edge index of `graph` out of a borrowed index handle.
+fn owned_edge<C: GraphProperty + ?Sized, R: Borrow<C::EdgeIx>>(_graph: &C, r: R) -> C::EdgeIx {
+    r.borrow().clone()
+}
 use safegraph::raw_graph::linked_adj_edge::{
     EdgeRepr, LinkedAdjEdgeGraph, NodeRepr as LinkedNodeRepr,
 };
@@ -112,7 +123,8 @@ macro_rules! scoped_adapter {
             pub fn remove_edge_set(g: &mut G) {
                 g.scope_mut(|ctx| {
                     let victims: Vec<_> = Graph::edge_indices(&*ctx)
-                        .filter(|&e| edge_is_victim(*ctx.edge(e)))
+                        .filter(|e| edge_is_victim(*ctx.edge(e.clone())))
+                        .map(|e| owned_edge(&*ctx, e))
                         .collect();
                     ctx.remove_nodes_edges(None, victims);
                 });
@@ -121,7 +133,8 @@ macro_rules! scoped_adapter {
             pub fn remove_node_set(g: &mut G) {
                 g.scope_mut(|ctx| {
                     let victims: Vec<_> = Graph::node_indices(&*ctx)
-                        .filter(|&n| node_is_victim(*ctx.node(n)))
+                        .filter(|n| node_is_victim(*ctx.node(n.clone())))
+                        .map(|n| owned_node(&*ctx, n))
                         .collect();
                     ctx.remove_nodes_edges(victims, None);
                 });
@@ -280,7 +293,7 @@ pub mod sg_vec_checked {
         for nix in GraphOperation::node_indices(g) {
             total = total.wrapping_add(*g.node(nix));
             for (_, e, _) in
-                unsafe { GraphOperation::walks_from_unchecked(g, nix) }.map(|w| w.get())
+                unsafe { GraphOperation::walks_from_unchecked(g, &nix) }.map(|w| w.get())
             {
                 total = total.wrapping_add(*e);
             }
@@ -292,7 +305,7 @@ pub mod sg_vec_checked {
         let mut total = 0usize;
         // SAFETY: not mutated during iteration.
         for nix in GraphOperation::node_indices(g) {
-            total += unsafe { GraphOperation::walks_from_unchecked(g, nix) }.count();
+            total += unsafe { GraphOperation::walks_from_unchecked(g, &nix) }.count();
         }
         total
     }

@@ -9,23 +9,33 @@ error: edge `e` is used for different edges
   |                        ^
 
 error[E0599]: no method named `stabilize` found for struct `LinkedAdjEdgeGraph<NC, EC>` in the current scope
-   --> tests/ui/graph_macro_duplicate_edge_expr.rs:4:74
-    |
-  4 |     let mut g = safegraph::VecGraph::<(i64, u32), (i64, u32)>::default().stabilize();
-    |                                                                          ^^^^^^^^^ method not found in `LinkedAdjEdgeGraph<Vec<((i64, u32), NodeRepr<u32>)>, Vec<(..., ...)>>`
-    |
-   ::: src/graph.rs:287:8
-    |
-287 |     fn stabilize<'r, N, E>(self) -> StabilizedGraph<'r, Self, N, E>
-    |        --------- the method is available for `LinkedAdjEdgeGraph<Vec<((i64, u32), NodeRepr<u32>)>, Vec<((i64, u32), EdgeRepr<u32, u32>)>>` here
-    |
-    = help: items from traits can only be used if the trait is in scope
-    = note: the full name for the type has been written to '$LONG_TYPE_FILE'
-    = note: consider using `--verbose` to print the full type name to the console
+    --> tests/ui/graph_macro_duplicate_edge_expr.rs:4:74
+     |
+   4 |     let mut g = safegraph::VecGraph::<(i64, u32), (i64, u32)>::default().stabilize();
+     |                                                                          ^^^^^^^^^
+     |
+    ::: src/graph.rs:293:8
+     |
+ 293 |     fn stabilize<'r, N, E>(self) -> StabilizedGraph<'r, Self, N, E>
+     |        --------- the method is available for `LinkedAdjEdgeGraph<Vec<((i64, u32), NodeRepr<u32>)>, Vec<((i64, u32), EdgeRepr<u32, u32>)>>` here
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: there is a method `tails` with a similar name, but with different arguments
+    --> src/graph.rs:1165:5
+     |
+1165 | /     fn tails<'r, B: Borrow<Self::EdgeIx>>(
+1166 | |         &'r self,
+1167 | |         edge_ix: B,
+1168 | |     ) -> NodeRefIter<'r, <Self as Directed<'r>>::EdgeTailIndices, Self>
+1169 | |     where
+1170 | |         Self: for<'x> Directed<'x>,
+     | |___________________________________^
+     = note: the full name for the type has been written to '$LONG_TYPE_FILE'
+     = note: consider using `--verbose` to print the full type name to the console
 help: trait `Graph` which provides `stabilize` is implemented but not in scope; perhaps you want to import it
-    |
-  3 + use safegraph::Graph;
-    |
+     |
+   3 + use safegraph::Graph;
+     |
 
 error: aborting due to 2 previous errors
 

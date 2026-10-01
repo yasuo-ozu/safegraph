@@ -135,7 +135,7 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
         (*node_ix as usize) < self.nodes.len()
     }
 
-    fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool {
+    fn contains_edge_index(&self, edge_ix: &Self::EdgeIx) -> bool {
         self.edges
             .get(edge_ix.0 as usize, edge_ix.1 as usize)
             .is_some()
@@ -177,7 +177,9 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
             .expect("invalid EdgeIx passed to edge_unchecked")
     }
 
-    unsafe fn endpoints_unchecked(&self, edge_ix: Self::EdgeIx) -> Self::Endpoints {
+    type EndpointsRef = [u32; 2];
+
+    unsafe fn endpoints_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::EndpointsRef {
         [edge_ix.0, edge_ix.1]
     }
 
@@ -199,7 +201,8 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
     }
 
     type EdgeIndicesOf = std::vec::IntoIter<EdgeIx>;
-    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesOf {
+    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesOf {
+        let node_ix = *node_ix;
         let row = node_ix as usize;
         let mut out = Vec::new();
         if let Some(view) = self.edges.outer_view(row) {
@@ -223,7 +226,8 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
     }
 
     type WalksFrom = std::vec::IntoIter<WalkItem<'r, EdgeIx, E, u32>>;
-    unsafe fn walks_from_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksFrom {
+    unsafe fn walks_from_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksFrom {
+        let node_ix = *node_ix;
         let row = node_ix as usize;
         let mut out = Vec::new();
         if let Some(view) = self.edges.outer_view(row) {
@@ -246,7 +250,8 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
     }
 
     type WalksOf = std::vec::IntoIter<WalkItem<'r, EdgeIx, E, u32>>;
-    unsafe fn walks_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksOf {
+    unsafe fn walks_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksOf {
+        let node_ix = *node_ix;
         let row = node_ix as usize;
         let mut out = Vec::new();
         if let Some(view) = self.edges.outer_view(row) {
@@ -330,7 +335,8 @@ impl<'r, N: 'r, E: 'r> GraphOperation<'r> for CsMatGraph<N, E> {
 
 impl<'r, N: 'r, E: 'r> Directed<'r> for CsMatGraph<N, E> {
     type EdgeIndicesTo = std::vec::IntoIter<EdgeIx>;
-    unsafe fn edge_indices_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesTo {
+    unsafe fn edge_indices_to_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesTo {
+        let node_ix = *node_ix;
         // Scan every row for `col == node_ix`. O(nnz). A CSC transpose
         // view would make this O(in-degree) — left as a future enhancement.
         let target = node_ix as usize;
@@ -348,7 +354,8 @@ impl<'r, N: 'r, E: 'r> Directed<'r> for CsMatGraph<N, E> {
     }
 
     type WalksTo = std::vec::IntoIter<WalkItemTo<'r, u32, EdgeIx, E>>;
-    unsafe fn walks_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksTo {
+    unsafe fn walks_to_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksTo {
+        let node_ix = *node_ix;
         let target = node_ix as usize;
         let mut out = Vec::new();
         for r in 0..self.edges.rows() {
@@ -371,7 +378,7 @@ impl<'r, N: 'r, E: 'r> Directed<'r> for CsMatGraph<N, E> {
     type EdgeTailIndices = core::iter::Once<u32>;
     unsafe fn edge_tail_indices_unchecked(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: &Self::EdgeIx,
     ) -> Self::EdgeTailIndices {
         core::iter::once(edge_ix.0)
     }
@@ -379,9 +386,17 @@ impl<'r, N: 'r, E: 'r> Directed<'r> for CsMatGraph<N, E> {
     type EdgeHeadIndices = core::iter::Once<u32>;
     unsafe fn edge_head_indices_unchecked(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: &Self::EdgeIx,
     ) -> Self::EdgeHeadIndices {
         core::iter::once(edge_ix.1)
+    }
+
+    unsafe fn edge_tail_index_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::NodeIxRef {
+        edge_ix.0
+    }
+
+    unsafe fn edge_head_index_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::NodeIxRef {
+        edge_ix.1
     }
 }
 
