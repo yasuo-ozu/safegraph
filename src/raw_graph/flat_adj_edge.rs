@@ -31,7 +31,6 @@
 //! O(out-degree). With `IS = TNone` there is no reverse index at all.
 
 use crate::collection::IndexKey;
-use core::borrow::Borrow;
 use core::marker::PhantomData;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
@@ -390,7 +389,7 @@ where
         self.nodes.contains_index(node_ix)
     }
 
-    fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool {
+    fn contains_edge_index(&self, edge_ix: &Self::EdgeIx) -> bool {
         if !self.nodes.contains_index(&edge_ix.0) {
             return false;
         }
@@ -411,10 +410,11 @@ where
         total
     }
 
-    type NodeIxRef = <NC as RandomAccessRef<'r>>::IndexRef;
-    type NodeIndices = <NC as RandomAccessRef<'r>>::IndexRefs;
+    // `VIx: Copy`, so lending references would save nothing.
+    type NodeIxRef = VIx;
+    type NodeIndices = <NC as RandomAccessRef<'r>>::Indices;
     fn node_indices(&'r self) -> Self::NodeIndices {
-        self.nodes.index_refs()
+        self.nodes.indices()
     }
 
     type EdgeIxRef = EdgeIx<VIx, EIx>;
@@ -444,7 +444,10 @@ where
         unsafe { &*val }
     }
 
-    unsafe fn endpoints_unchecked(&self, edge_ix: Self::EdgeIx) -> Self::Endpoints {
+    type EndpointsRef = [VIx; 2];
+
+    unsafe fn endpoints_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::EndpointsRef {
+        let edge_ix = *edge_ix;
         let inner = &unsafe { self.nodes.get_storage_unchecked(&edge_ix.0) }.outgoing;
         let target = unsafe { inner.get_storage_unchecked(&edge_ix.1) };
         [edge_ix.0, *target]
@@ -455,15 +458,17 @@ where
         &'r self,
         node_ix: &Self::NodeIx,
     ) -> Self::EdgeIndicesFrom {
-        let inner = &unsafe { self.nodes.get_storage_unchecked(node_ix) }.outgoing;
+        let node_ix = *node_ix;
+        let inner = &unsafe { self.nodes.get_storage_unchecked(&node_ix) }.outgoing;
         EdgeIndicesFromIter {
-            head: *node_ix,
+            head: node_ix,
             inner: inner.indices(),
         }
     }
 
     type EdgeIndicesOf = std::vec::IntoIter<EdgeIx<VIx, EIx>>;
-    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesOf {
+    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesOf {
+        let node_ix = *node_ix;
         let mut out = Vec::new();
         let inner = &unsafe { self.nodes.get_storage_unchecked(&node_ix) }.outgoing;
         for eix in inner.indices() {
@@ -479,7 +484,8 @@ where
     }
 
     type WalksFrom = WalksFromIter<'r, VIx, EC, <EC as RandomAccessRef<'r>>::Indices>;
-    unsafe fn walks_from_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksFrom {
+    unsafe fn walks_from_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksFrom {
+        let node_ix = *node_ix;
         let inner = &unsafe { self.nodes.get_storage_unchecked(&node_ix) }.outgoing;
         WalksFromIter {
             head: node_ix,
@@ -489,7 +495,8 @@ where
     }
 
     type WalksOf = std::vec::IntoIter<WalkItem<'r, EdgeIx<VIx, EIx>, E, VIx>>;
-    unsafe fn walks_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksOf {
+    unsafe fn walks_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksOf {
+        let node_ix = *node_ix;
         let mut out = Vec::new();
         let inner = &unsafe { self.nodes.get_storage_unchecked(&node_ix) }.outgoing;
         for eix in inner.indices() {
@@ -560,23 +567,32 @@ impl<'r, NC, EC, V, E, VIx, EIx, IS> Directed<'r> for FlatAdjEdgeGraph<NC>
 where
     NC: RandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>>
         + IncomingOps<EC, IS, VIx, EIx>
+        + InsertableCollection<InsertedIndex = VIx>
+        + DrainEntries
+        + Default
         + 'r,
-    EC: RandomAccess<Index = EIx, Value = E, Storage = VIx> + 'r,
+    EC: RandomAccess<Index = EIx, Value = E, Storage = VIx>
+        + InsertableCollection<InsertedIndex = EIx>
+        + DrainEntries
+        + Default
+        + 'r,
     for<'a> NC: RandomAccessRef<'a>,
     for<'a> EC: RandomAccessRef<'a>,
-    IS: 'static,
+    IS: Default + 'static,
     VIx: Copy + IndexKey + Display + Debug + 'static,
     EIx: Copy + IndexKey + Display + Debug + 'static,
     V: 'r,
     E: 'r,
 {
     type EdgeIndicesTo = std::vec::IntoIter<EdgeIx<VIx, EIx>>;
-    unsafe fn edge_indices_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesTo {
+    unsafe fn edge_indices_to_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesTo {
+        let node_ix = *node_ix;
         unsafe { IncomingOps::collect_incoming(&self.nodes, node_ix) }.into_iter()
     }
 
     type WalksTo = std::vec::IntoIter<WalkItemTo<'r, VIx, EdgeIx<VIx, EIx>, E>>;
-    unsafe fn walks_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksTo {
+    unsafe fn walks_to_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksTo {
+        let node_ix = *node_ix;
         let eixs = unsafe { IncomingOps::collect_incoming(&self.nodes, node_ix) };
         let mut out = Vec::with_capacity(eixs.len());
         for eix in eixs {
@@ -590,7 +606,7 @@ where
     type EdgeTailIndices = core::iter::Once<VIx>;
     unsafe fn edge_tail_indices_unchecked(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: &Self::EdgeIx,
     ) -> Self::EdgeTailIndices {
         core::iter::once(edge_ix.0)
     }
@@ -598,11 +614,20 @@ where
     type EdgeHeadIndices = core::iter::Once<VIx>;
     unsafe fn edge_head_indices_unchecked(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: &Self::EdgeIx,
     ) -> Self::EdgeHeadIndices {
         let inner = &unsafe { self.nodes.get_storage_unchecked(&edge_ix.0) }.outgoing;
         let target = unsafe { inner.get_storage_unchecked(&edge_ix.1) };
         core::iter::once(*target)
+    }
+
+    unsafe fn edge_tail_index_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::NodeIxRef {
+        edge_ix.0
+    }
+
+    unsafe fn edge_head_index_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::NodeIxRef {
+        let inner = &unsafe { self.nodes.get_storage_unchecked(&edge_ix.0) }.outgoing;
+        *unsafe { inner.get_storage_unchecked(&edge_ix.1) }
     }
 }
 
@@ -655,8 +680,20 @@ where
 
 impl<'r, NC, EC, V, E, VIx, EIx, IS> UpdateNode<'r> for FlatAdjEdgeGraph<NC>
 where
-    NC: UpdatableRandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>> + 'r,
-    EC: RandomAccess<Index = EIx, Value = E, Storage = VIx> + 'r,
+    NC: UpdatableRandomAccess<Index = VIx, Value = V, Storage = NodeRepr<EC, IS>>
+        + IncomingOps<EC, IS, VIx, EIx>
+        + InsertableCollection<InsertedIndex = VIx>
+        + DrainEntries
+        + Default
+        + 'r,
+    EC: RandomAccess<Index = EIx, Value = E, Storage = VIx>
+        + InsertableCollection<InsertedIndex = EIx>
+        + DrainEntries
+        + Default
+        + 'r,
+    for<'a> NC: RandomAccessRef<'a>,
+    for<'a> EC: RandomAccessRef<'a>,
+    IS: Default + 'static,
     VIx: Copy + IndexKey + Display + Debug + 'static,
     EIx: Copy + IndexKey + Display + Debug + 'static,
     V: 'r,
@@ -667,12 +704,15 @@ where
     }
 
     type WalksFromMut = std::iter::Empty<WalkItemMut<'r, EdgeIx<VIx, EIx>, E, VIx>>;
-    unsafe fn walks_from_unchecked_mut(&'r mut self, _node_ix: Self::NodeIx) -> Self::WalksFromMut {
+    unsafe fn walks_from_unchecked_mut(
+        &'r mut self,
+        _node_ix: &Self::NodeIx,
+    ) -> Self::WalksFromMut {
         std::iter::empty()
     }
 
     type WalksOfMut = std::iter::Empty<WalkItemMut<'r, EdgeIx<VIx, EIx>, E, VIx>>;
-    unsafe fn walks_of_unchecked_mut(&'r mut self, _node_ix: Self::NodeIx) -> Self::WalksOfMut {
+    unsafe fn walks_of_unchecked_mut(&'r mut self, _node_ix: &Self::NodeIx) -> Self::WalksOfMut {
         std::iter::empty()
     }
 }
@@ -878,8 +918,8 @@ where
     EIx: Copy + IndexKey + Display + Debug + 'static,
     V: PartialEq,
 {
-    fn node_index(&self, node: impl Borrow<Self::Node>) -> Option<Self::NodeIx> {
-        unsafe { self.nodes.value_to_key_unchecked(node.borrow()) }.copied()
+    fn node_index(&self, node: &Self::Node) -> Option<Self::NodeIx> {
+        unsafe { self.nodes.value_to_key_unchecked(node) }.copied()
     }
 }
 

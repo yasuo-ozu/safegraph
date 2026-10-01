@@ -64,6 +64,7 @@
 //! assert_eq!(total, 3);
 //! ```
 
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
 use std::ops::Add;
@@ -148,11 +149,11 @@ where
             while let Some(EdgeCandidate { edge_ix, .. }) = self.heap.pop() {
                 let eps: Vec<G::NodeIx> = unsafe {
                     <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
-                        self.graph,
-                        edge_ix.clone(),
+                        self.graph, &edge_ix,
                     )
                 }
                 .into_iter()
+                .map(|n| n.borrow().clone())
                 .collect();
                 let (a, b) = (eps[0].clone(), eps[1].clone());
 
@@ -212,19 +213,19 @@ unsafe fn add_incident_edges<G, W, F>(
     W: Copy + Ord,
     F: Fn(&G::Edge) -> W,
 {
-    for eix in
-        <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, node.clone())
-    {
+    for eix in <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, &node) {
+        let eix: &G::EdgeIx = eix.borrow();
         let eps: Vec<G::NodeIx> =
-            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix.clone())
+            <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix)
                 .into_iter()
+                .map(|n| n.borrow().clone())
                 .collect();
         let (a, b) = (eps[0].clone(), eps[1].clone());
         if (a == node && !in_mst.contains(&b)) || (b == node && !in_mst.contains(&a)) {
-            let w = edge_weight(Graph::edge_unchecked(graph, eix.clone()));
+            let w = edge_weight(Graph::edge_unchecked(graph, eix));
             heap.push(EdgeCandidate {
                 weight: w,
-                edge_ix: eix,
+                edge_ix: eix.clone(),
             });
         }
     }

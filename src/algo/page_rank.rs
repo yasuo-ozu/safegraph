@@ -66,7 +66,7 @@ pub fn page_rank<'r, G>(
     tolerance: f64,
 ) -> HashMap<G::NodeIx, f64>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     let nodes: Vec<G::NodeIx> = super::owned_node_indices(graph).collect();
     let n = nodes.len();
@@ -86,7 +86,7 @@ where
     // Precompute out-degrees
     let mut out_degree: HashMap<G::NodeIx, usize> = HashMap::new();
     for node in nodes.iter().cloned() {
-        let deg = unsafe { graph.neighbor_indices_from_unchecked(node.clone()) }.count();
+        let deg = unsafe { graph.neighbor_indices_from_unchecked(&node) }.count();
         out_degree.insert(node, deg);
     }
 
@@ -96,7 +96,7 @@ where
         predecessors.insert(node, Vec::new());
     }
     for node in nodes.iter() {
-        for succ in unsafe { graph.neighbor_indices_from_unchecked(node.clone()) } {
+        for succ in unsafe { graph.neighbor_indices_from_unchecked(node) } {
             predecessors.get_mut(&succ).unwrap().push(node.clone());
         }
     }

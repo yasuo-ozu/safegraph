@@ -35,7 +35,7 @@ fn scoped_node_ix_inner_btree() {
         let nodes: Vec<_> = ctx.node_indices().collect();
         // inner() returns the underlying BTreeGraph NodeIx (&u32)
         let inner = nodes[0].inner();
-        assert_eq!(inner, 0);
+        assert_eq!(*inner, 0);
     });
 }
 
@@ -45,7 +45,7 @@ fn scoped_edge_ix_inner_btree() {
     g.scope(|ctx| {
         let edges: Vec<_> = ctx.edge_indices().collect();
         let inner = edges[0].inner();
-        assert_eq!(inner, 10);
+        assert_eq!(*inner, 10);
     });
 }
 
@@ -74,7 +74,7 @@ fn scoped_node_ix_equality_btree() {
     let g = diamond_btree();
     g.scope(|ctx| {
         let nodes: Vec<_> = ctx.node_indices().collect();
-        let n0_again = ctx.node_index(0).unwrap();
+        let n0_again = ctx.node_index(&0).unwrap();
         assert_eq!(nodes[0], n0_again);
     });
 }
@@ -106,7 +106,7 @@ fn scoped_edge_ix_inner_vec() {
 fn scope_directed_edges_to_btree() {
     let g = diamond_btree();
     g.scope(|ctx| {
-        let n3 = ctx.node_index(3).unwrap();
+        let n3 = ctx.node_index(&3).unwrap();
         let incoming: Vec<_> = ctx.edges_to(n3).collect();
         assert_eq!(incoming.len(), 2);
     });
@@ -116,7 +116,7 @@ fn scope_directed_edges_to_btree() {
 fn scope_edge_indices_of_btree() {
     let g = diamond_btree();
     g.scope(|ctx| {
-        let n1 = ctx.node_index(1).unwrap();
+        let n1 = ctx.node_index(&1).unwrap();
         let all: Vec<_> = ctx.edge_indices_of(n1).collect();
         assert_eq!(all.len(), 2);
     });
@@ -126,7 +126,7 @@ fn scope_edge_indices_of_btree() {
 fn scope_incident_indices_btree() {
     let g = diamond_btree();
     g.scope(|ctx| {
-        let n1 = ctx.node_index(1).unwrap();
+        let n1 = ctx.node_index(&1).unwrap();
         let inc: Vec<_> = ctx.neighbor_indices_of(n1).collect();
         assert_eq!(inc.len(), 2);
     });

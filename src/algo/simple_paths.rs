@@ -91,7 +91,7 @@ pub fn all_simple_paths<'r, G>(
     max_intermediate_nodes: Option<usize>,
 ) -> AllSimplePaths<'r, G, G::NodeIx>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     assert!(Graph::contains_node_index(graph, &from));
     assert!(Graph::contains_node_index(graph, &to));
@@ -119,7 +119,7 @@ pub unsafe fn all_simple_paths_unchecked<'r, G>(
     max_intermediate_nodes: Option<usize>,
 ) -> AllSimplePaths<'r, G, G::NodeIx>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     let max_length = max_intermediate_nodes
         .map(|m| m + 2) // +2 for from and to
@@ -129,9 +129,7 @@ where
     let mut visited = HashSet::new();
     visited.insert(from.clone());
 
-    let succs: Vec<G::NodeIx> = graph
-        .neighbor_indices_from_unchecked(from.clone())
-        .collect();
+    let succs: Vec<G::NodeIx> = graph.neighbor_indices_from_unchecked(&from).collect();
 
     AllSimplePaths {
         graph,
@@ -147,7 +145,7 @@ where
 
 impl<'r, G> Iterator for AllSimplePaths<'r, G, G::NodeIx>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     type Item = Vec<G::NodeIx>;
 
@@ -193,7 +191,7 @@ where
 
             // SAFETY: succ came from the graph. Caller guarantees no modification.
             let succ_succs: Vec<G::NodeIx> =
-                unsafe { self.graph.neighbor_indices_from_unchecked(succ.clone()) }.collect();
+                unsafe { self.graph.neighbor_indices_from_unchecked(&succ) }.collect();
 
             self.stack.push(succ);
             self.successors.push(succ_succs);

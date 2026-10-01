@@ -8,6 +8,8 @@
 //! [`Graph`]: super::Graph
 
 use std::borrow::Borrow;
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
 
 use super::walk_item::WalkItem;
 use super::GraphProperty;
@@ -84,7 +86,7 @@ pub trait GraphOperation<'r>: GraphProperty {
     /// Returns `true` if `node_ix` refers to a live node in this graph.
     fn contains_node_index(&self, node_ix: &Self::NodeIx) -> bool;
     /// Returns `true` if `edge_ix` refers to a live edge in this graph.
-    fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool;
+    fn contains_edge_index(&self, edge_ix: &Self::EdgeIx) -> bool;
 
     /// Returns the number of live nodes in the graph.
     fn len_node(&self) -> usize;
@@ -101,11 +103,11 @@ pub trait GraphOperation<'r>: GraphProperty {
     }
 
     /// Item of [`node_indices`](Self::node_indices): `&'r NodeIx` or an owned `NodeIx`.
-    type NodeIxRef: Borrow<Self::NodeIx>;
+    type NodeIxRef: Borrow<Self::NodeIx> + Clone + Eq + Ord + Hash + Display + Debug;
     /// Iterator type returned by [`node_indices`](Self::node_indices).
     type NodeIndices: Iterator<Item = Self::NodeIxRef>;
     /// Item of [`edge_indices`](Self::edge_indices): `&'r EdgeIx` or an owned `EdgeIx`.
-    type EdgeIxRef: Borrow<Self::EdgeIx>;
+    type EdgeIxRef: Borrow<Self::EdgeIx> + Clone + Eq + Ord + Hash + Display + Debug;
     /// Iterator type returned by [`edge_indices`](Self::edge_indices).
     type EdgeIndices: Iterator<Item = Self::EdgeIxRef>;
 
@@ -124,10 +126,14 @@ pub trait GraphOperation<'r>: GraphProperty {
 
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn endpoints_unchecked(&self, edge_ix: Self::EdgeIx) -> Self::Endpoints;
+    unsafe fn endpoints_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::EndpointsRef;
+
+    /// Returned by [`endpoints_unchecked`](Self::endpoints_unchecked): the
+    /// endpoints as [`NodeIxRef`](Self::NodeIxRef)s.
+    type EndpointsRef: IntoIterator<Item = Self::NodeIxRef>;
 
     /// Iterator type returned by [`edge_indices_from_unchecked`](Self::edge_indices_from_unchecked).
-    type EdgeIndicesFrom: Iterator<Item = Self::EdgeIx>;
+    type EdgeIndicesFrom: Iterator<Item = Self::EdgeIxRef>;
 
     /// Returns edges starting from `node_ix`.
     /// For directed graphs this returns outgoing edges only.
@@ -141,7 +147,7 @@ pub trait GraphOperation<'r>: GraphProperty {
     ) -> Self::EdgeIndicesFrom;
 
     /// Iterator type returned by [`edge_indices_of_unchecked`](Self::edge_indices_of_unchecked).
-    type EdgeIndicesOf: Iterator<Item = Self::EdgeIx>;
+    type EdgeIndicesOf: Iterator<Item = Self::EdgeIxRef>;
 
     /// Returns all edges connected with `node_ix` (both directions for directed graphs).
     ///
@@ -150,7 +156,7 @@ pub trait GraphOperation<'r>: GraphProperty {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesOf;
+    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesOf;
 
     /// Type returned by [`walks_from_unchecked`](Self::walks_from_unchecked).
     ///
@@ -159,7 +165,7 @@ pub trait GraphOperation<'r>: GraphProperty {
     /// the same edge may appear multiple times (once per endpoint that is not
     /// the source node). The item is lifetime-erased (see [`WalkItem`]); deref
     /// it to obtain the borrowed tuple.
-    type WalksFrom: Iterator<Item = WalkItem<'r, Self::EdgeIx, Self::Edge, Self::NodeIx>>;
+    type WalksFrom: Iterator<Item = WalkItem<'r, Self::EdgeIxRef, Self::Edge, Self::NodeIxRef>>;
 
     /// Returns (EdgeIx, &Edge, NodeIx) triples for outgoing edges.
     ///
@@ -168,13 +174,13 @@ pub trait GraphOperation<'r>: GraphProperty {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn walks_from_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksFrom;
+    unsafe fn walks_from_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksFrom;
 
     /// Type returned by [`walks_of_unchecked`](Self::walks_of_unchecked).
     ///
     /// Each item is a [`WalkItem`] wrapping `(EdgeIx, &Edge, NodeIx)`; see
     /// [`WalksFrom`](Self::WalksFrom).
-    type WalksOf: Iterator<Item = WalkItem<'r, Self::EdgeIx, Self::Edge, Self::NodeIx>>;
+    type WalksOf: Iterator<Item = WalkItem<'r, Self::EdgeIxRef, Self::Edge, Self::NodeIxRef>>;
 
     /// Returns (EdgeIx, &Edge, NodeIx) triples for all incident edges.
     ///
@@ -184,7 +190,7 @@ pub trait GraphOperation<'r>: GraphProperty {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn walks_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksOf;
+    unsafe fn walks_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksOf;
 
     /// Iterator type for drained nodes returned by [`drain`](Self::drain).
     type DrainNode: Iterator<Item = Self::Node>;

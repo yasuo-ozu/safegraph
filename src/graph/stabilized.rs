@@ -12,7 +12,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 
 use super::capability::*;
-use super::edge::Map;
+use super::edge::{Endpoints, Map};
 use super::walk_item::{WalkItem, WalkItemMut, WalkItemTo};
 use super::{Graph, GraphOperation, GraphProperty};
 
@@ -28,7 +28,7 @@ where
 impl<'r, G, N, E, I> Iterator for Walks<'r, G, N, E, I>
 where
     G: super::GraphOperation<'r, Node = NodeIx<N>, Edge = EdgeIx<E>> + ?Sized,
-    I: Iterator<Item = WalkItem<'r, G::EdgeIx, EdgeIx<E>, G::NodeIx>>,
+    I: Iterator<Item = WalkItem<'r, G::EdgeIxRef, EdgeIx<E>, G::NodeIxRef>>,
 {
     type Item = WalkItem<'r, EdgeIx<G::EdgeIx>, E, NodeIx<G::NodeIx>>;
     fn next(&mut self) -> Option<Self::Item> {
@@ -46,7 +46,7 @@ where
             // is valid for lookup/comparison; `0` would be rejected by
             // `contains_node_index`. SAFETY: `nix` came from the inner graph's
             // own walk iterator, so it is a valid node index.
-            let nver = version_of(unsafe { self.graph.node_unchecked(&nix) });
+            let nver = version_of(unsafe { self.graph.node_unchecked(nix.borrow()) });
             // SAFETY: `edge_ptr` points to a live `EdgeIx<E>` for `'r`, so its
             // `inner: E` field address is valid for `'r`.
             let inner_ptr: *const E = unsafe { core::ptr::addr_of!((*edge_ptr).inner) };
@@ -54,12 +54,12 @@ where
                 WalkItem::from_parts(
                     EdgeIx {
                         version: ver,
-                        inner: eix,
+                        inner: eix.borrow().clone(),
                     },
                     inner_ptr,
                     NodeIx {
                         version: nver,
-                        inner: nix,
+                        inner: nix.borrow().clone(),
                     },
                 )
             });
@@ -77,8 +77,8 @@ where
 
 impl<'r, G, N, E, I> Iterator for WalksMut<'r, G, N, E, I>
 where
-    G: super::GraphProperty<Node = NodeIx<N>, Edge = EdgeIx<E>> + ?Sized,
-    I: Iterator<Item = WalkItemMut<'r, G::EdgeIx, EdgeIx<E>, G::NodeIx>>,
+    G: super::GraphOperation<'r, Node = NodeIx<N>, Edge = EdgeIx<E>> + ?Sized,
+    I: Iterator<Item = WalkItemMut<'r, G::EdgeIxRef, EdgeIx<E>, G::NodeIxRef>>,
 {
     type Item = WalkItemMut<'r, EdgeIx<G::EdgeIx>, E, NodeIx<G::NodeIx>>;
     fn next(&mut self) -> Option<Self::Item> {
@@ -95,12 +95,12 @@ where
                 WalkItemMut::from_parts(
                     EdgeIx {
                         version: ver,
-                        inner: eix,
+                        inner: eix.borrow().clone(),
                     },
                     inner_ptr,
                     NodeIx {
                         version: 0,
-                        inner: nix,
+                        inner: nix.borrow().clone(),
                     },
                 )
             });
@@ -120,7 +120,7 @@ where
 impl<'r, G, N, E, I> Iterator for WalksTo<'r, G, N, E, I>
 where
     G: super::GraphOperation<'r, Node = NodeIx<N>, Edge = EdgeIx<E>> + ?Sized,
-    I: Iterator<Item = WalkItemTo<'r, G::NodeIx, G::EdgeIx, EdgeIx<E>>>,
+    I: Iterator<Item = WalkItemTo<'r, G::NodeIxRef, G::EdgeIxRef, EdgeIx<E>>>,
 {
     type Item = WalkItemTo<'r, NodeIx<G::NodeIx>, EdgeIx<G::EdgeIx>, E>;
     fn next(&mut self) -> Option<Self::Item> {
@@ -133,18 +133,18 @@ where
             }
             // SAFETY: `nix` came from the inner graph's own walk iterator; look up
             // its live version so the yielded index is valid (see `Walks`).
-            let nver = version_of(unsafe { self.graph.node_unchecked(&nix) });
+            let nver = version_of(unsafe { self.graph.node_unchecked(nix.borrow()) });
             // SAFETY: project to the `inner: E` field; valid for `'r`.
             let inner_ptr: *const E = unsafe { core::ptr::addr_of!((*edge_ptr).inner) };
             return Some(unsafe {
                 WalkItemTo::from_parts(
                     NodeIx {
                         version: nver,
-                        inner: nix,
+                        inner: nix.borrow().clone(),
                     },
                     EdgeIx {
                         version: ver,
-                        inner: eix,
+                        inner: eix.borrow().clone(),
                     },
                     inner_ptr,
                 )
@@ -374,8 +374,8 @@ where
         ver == ix.version
     }
 
-    fn contains_edge_index(&self, ix: Self::EdgeIx) -> bool {
-        if ix.version <= 0 || !self.inner.contains_edge_index(ix.inner.clone()) {
+    fn contains_edge_index(&self, ix: &Self::EdgeIx) -> bool {
+        if ix.version <= 0 || !self.inner.contains_edge_index(&ix.inner) {
             return false;
         }
         let ver = unsafe { version_of(self.inner.edge_unchecked(&ix.inner)) };
@@ -427,13 +427,22 @@ where
         &self.inner.edge_unchecked(&ix.inner).inner
     }
 
-    unsafe fn endpoints_unchecked(&self, ix: Self::EdgeIx) -> Self::Endpoints {
-        <G as GraphOperation<'_>>::endpoints_unchecked(&self.inner, ix.inner).map_forward(|nix| {
-            NodeIx {
-                version: version_of(unsafe { self.inner.node_unchecked(&nix) }),
-                inner: nix,
-            }
-        })
+    // The adapter attaches each endpoint's live version.
+    type EndpointsRef = NodeIndices<
+        'r,
+        N,
+        E,
+        G,
+        <<G as GraphOperation<'r>>::EndpointsRef as IntoIterator>::IntoIter,
+    >;
+
+    unsafe fn endpoints_unchecked(&'r self, ix: &Self::EdgeIx) -> Self::EndpointsRef {
+        NodeIndices {
+            graph: &self.inner,
+            inner: <G as GraphOperation<'r>>::endpoints_unchecked(&self.inner, &ix.inner)
+                .into_iter(),
+            _marker: PhantomData,
+        }
     }
 
     type EdgeIndicesFrom = EdgeIndices<'r, N, E, G, G::EdgeIndicesFrom>;
@@ -448,10 +457,10 @@ where
 
     type EdgeIndicesOf = EdgeIndices<'r, N, E, G, G::EdgeIndicesOf>;
 
-    unsafe fn edge_indices_of_unchecked(&'r self, ix: Self::NodeIx) -> Self::EdgeIndicesOf {
+    unsafe fn edge_indices_of_unchecked(&'r self, ix: &Self::NodeIx) -> Self::EdgeIndicesOf {
         EdgeIndices {
             graph: &self.inner,
-            inner: self.inner.edge_indices_of_unchecked(ix.inner),
+            inner: self.inner.edge_indices_of_unchecked(&ix.inner),
             _marker: PhantomData,
         }
     }
@@ -459,21 +468,21 @@ where
     type WalksFrom = Walks<'r, G, N, E, <G as GraphOperation<'r>>::WalksFrom>;
     type WalksOf = Walks<'r, G, N, E, <G as GraphOperation<'r>>::WalksOf>;
 
-    unsafe fn walks_from_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksFrom {
+    unsafe fn walks_from_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksFrom {
         Walks {
             graph: &self.inner,
             inner: unsafe {
-                <G as GraphOperation<'r>>::walks_from_unchecked(&self.inner, node_ix.inner)
+                <G as GraphOperation<'r>>::walks_from_unchecked(&self.inner, &node_ix.inner)
             },
             _marker: PhantomData,
         }
     }
 
-    unsafe fn walks_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksOf {
+    unsafe fn walks_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksOf {
         Walks {
             graph: &self.inner,
             inner: unsafe {
-                <G as GraphOperation<'r>>::walks_of_unchecked(&self.inner, node_ix.inner)
+                <G as GraphOperation<'r>>::walks_of_unchecked(&self.inner, &node_ix.inner)
             },
             _marker: PhantomData,
         }
@@ -524,39 +533,57 @@ where
     type EdgeHeadIndices = NodeIndices<'r, N, E, G, <G as Directed<'r>>::EdgeHeadIndices>;
     type WalksTo = WalksTo<'r, G, N, E, <G as Directed<'r>>::WalksTo>;
 
-    unsafe fn walks_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksTo {
+    unsafe fn walks_to_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksTo {
         WalksTo {
             graph: &self.inner,
-            inner: unsafe { <G as Directed<'r>>::walks_to_unchecked(&self.inner, node_ix.inner) },
+            inner: unsafe { <G as Directed<'r>>::walks_to_unchecked(&self.inner, &node_ix.inner) },
             _marker: PhantomData,
         }
     }
 
-    unsafe fn edge_indices_to_unchecked(&'r self, ix: Self::NodeIx) -> Self::EdgeIndicesTo {
+    unsafe fn edge_indices_to_unchecked(&'r self, ix: &Self::NodeIx) -> Self::EdgeIndicesTo {
         EdgeIndices {
             graph: &self.inner,
-            inner: <G as Directed<'r>>::edge_indices_to_unchecked(&self.inner, ix.inner),
+            inner: <G as Directed<'r>>::edge_indices_to_unchecked(&self.inner, &ix.inner),
             _marker: PhantomData,
         }
     }
 
-    unsafe fn edge_tail_indices_unchecked(&'r self, ix: Self::EdgeIx) -> Self::EdgeTailIndices {
+    unsafe fn edge_tail_indices_unchecked(&'r self, ix: &Self::EdgeIx) -> Self::EdgeTailIndices {
         NodeIndices {
             graph: &self.inner,
             inner: unsafe {
-                <G as Directed<'r>>::edge_tail_indices_unchecked(&self.inner, ix.inner)
+                <G as Directed<'r>>::edge_tail_indices_unchecked(&self.inner, &ix.inner)
             },
             _marker: PhantomData,
         }
     }
 
-    unsafe fn edge_head_indices_unchecked(&'r self, ix: Self::EdgeIx) -> Self::EdgeHeadIndices {
+    unsafe fn edge_head_indices_unchecked(&'r self, ix: &Self::EdgeIx) -> Self::EdgeHeadIndices {
         NodeIndices {
             graph: &self.inner,
             inner: unsafe {
-                <G as Directed<'r>>::edge_head_indices_unchecked(&self.inner, ix.inner)
+                <G as Directed<'r>>::edge_head_indices_unchecked(&self.inner, &ix.inner)
             },
             _marker: PhantomData,
+        }
+    }
+
+    unsafe fn edge_tail_index_unchecked(&'r self, ix: &Self::EdgeIx) -> Self::NodeIxRef {
+        let tail = <G as Directed<'r>>::edge_tail_index_unchecked(&self.inner, &ix.inner);
+        let tail: &G::NodeIx = tail.borrow();
+        NodeIx {
+            version: version_of(unsafe { self.inner.node_unchecked(tail) }),
+            inner: tail.clone(),
+        }
+    }
+
+    unsafe fn edge_head_index_unchecked(&'r self, ix: &Self::EdgeIx) -> Self::NodeIxRef {
+        let head = <G as Directed<'r>>::edge_head_index_unchecked(&self.inner, &ix.inner);
+        let head: &G::NodeIx = head.borrow();
+        NodeIx {
+            version: version_of(unsafe { self.inner.node_unchecked(head) }),
+            inner: head.clone(),
         }
     }
 }
@@ -623,20 +650,20 @@ where
     }
 
     type WalksFromMut = WalksMut<'r, G, N, E, <G as UpdateNode<'r>>::WalksFromMut>;
-    unsafe fn walks_from_unchecked_mut(&'r mut self, node_ix: Self::NodeIx) -> Self::WalksFromMut {
+    unsafe fn walks_from_unchecked_mut(&'r mut self, node_ix: &Self::NodeIx) -> Self::WalksFromMut {
         WalksMut {
             inner: unsafe {
-                <G as UpdateNode<'r>>::walks_from_unchecked_mut(&mut self.inner, node_ix.inner)
+                <G as UpdateNode<'r>>::walks_from_unchecked_mut(&mut self.inner, &node_ix.inner)
             },
             _marker: PhantomData,
         }
     }
 
     type WalksOfMut = WalksMut<'r, G, N, E, <G as UpdateNode<'r>>::WalksOfMut>;
-    unsafe fn walks_of_unchecked_mut(&'r mut self, node_ix: Self::NodeIx) -> Self::WalksOfMut {
+    unsafe fn walks_of_unchecked_mut(&'r mut self, node_ix: &Self::NodeIx) -> Self::WalksOfMut {
         WalksMut {
             inner: unsafe {
-                <G as UpdateNode<'r>>::walks_of_unchecked_mut(&mut self.inner, node_ix.inner)
+                <G as UpdateNode<'r>>::walks_of_unchecked_mut(&mut self.inner, &node_ix.inner)
             },
             _marker: PhantomData,
         }
@@ -754,10 +781,13 @@ where
                         unsafe { <G as GraphOperation<'_>>::edge_unchecked(&self.inner, ix) }
                             .version
                             < 0
-                            && <G as GraphOperation<'_>>::endpoints_unchecked(
-                                &self.inner,
-                                ix.clone(),
-                            ) == inner_endpoints
+                            && <G::Endpoints as Endpoints>::try_from_node_indices(
+                                <G as GraphOperation<'_>>::endpoints_unchecked(&self.inner, ix)
+                                    .into_iter()
+                                    .map(|nix| nix.borrow().clone()),
+                            )
+                            .as_ref()
+                                == Some(&inner_endpoints)
                     })
                     .map(|ix| ix.borrow().clone())
             };
@@ -821,18 +851,15 @@ where
     G::Endpoints: Map<NodeIx<G::NodeIx>>,
 {
     unsafe fn take_node_unchecked(&mut self, ix: Self::NodeIx) -> Self::Node {
-        let node = unsafe {
-            Graph::node_unchecked(&self.inner, ix.inner.clone())
-                .inner
-                .clone()
-        };
+        let node = unsafe { Graph::node_unchecked(&self.inner, &ix.inner).inner.clone() };
         <Self as RemoveNode>::remove_node_unchecked(self, ix);
         node
     }
 
     unsafe fn remove_node_unchecked(&mut self, ix: Self::NodeIx) {
         let incident_edges: Vec<G::EdgeIx> = {
-            <G as GraphOperation<'_>>::edge_indices_of_unchecked(&self.inner, ix.inner.clone())
+            <G as GraphOperation<'_>>::edge_indices_of_unchecked(&self.inner, &ix.inner)
+                .map(|eix| eix.borrow().clone())
                 .collect()
         };
         for inner_eix in incident_edges {

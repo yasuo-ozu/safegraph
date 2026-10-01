@@ -8,12 +8,12 @@ error[E0277]: the trait bound `Vec<(u32, NodeRepr<u32>)>: StableCollection` is n
     |     the trait `StableCollection` is not implemented for `Vec<(u32, NodeRepr<u32>)>`
     |
 help: the following other types implement trait `StableCollection`
-   --> src/collection.rs:860:1
+   --> src/collection.rs:884:1
     |
-860 | unsafe impl<I: IndexKey, S> StableCollection for BTreeMap<I, S> {}
+884 | unsafe impl<I: IndexKey, S> StableCollection for BTreeMap<I, S> {}
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `BTreeMap<I, S>`
-861 | // SAFETY: auto impl
-862 | unsafe impl<I: IndexKey, S> StableCollection for HashMap<I, S> {}
+885 | // SAFETY: auto impl
+886 | unsafe impl<I: IndexKey, S> StableCollection for HashMap<I, S> {}
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `HashMap<I, S>`
     = note: required for `LinkedAdjEdgeGraph<Vec<(u32, NodeRepr<u32>)>, Vec<(u32, ...)>>` to implement `StableNode`
 note: required by a bound in `__assert_stable_node`

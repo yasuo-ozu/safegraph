@@ -11,10 +11,8 @@
 //! guarantees; the `Graph` blanket impl then wires the safe convenience
 //! layer on top.
 
-use core::borrow::Borrow;
-
 use super::walk_item::{WalkItemMut, WalkItemTo};
-use super::GraphProperty;
+use super::{GraphOperation, GraphProperty};
 
 /// Mutable access to node data and incident-edge traversal with mutable edge
 /// references.
@@ -22,7 +20,7 @@ use super::GraphProperty;
 /// Use [`Graph::walks_from_mut`](super::Graph::walks_from_mut) /
 /// [`Graph::walks_of_mut`](super::Graph::walks_of_mut) instead of calling
 /// these methods directly.
-pub trait UpdateNode<'r>: GraphProperty {
+pub trait UpdateNode<'r>: GraphOperation<'r> {
     /// Returns a mutable reference to the node data at `node_ix`.
     ///
     /// # Safety
@@ -30,24 +28,26 @@ pub trait UpdateNode<'r>: GraphProperty {
     unsafe fn node_unchecked_mut(&mut self, node_ix: Self::NodeIx) -> &mut Self::Node;
 
     /// see [`UpdateNode::walks_of_unchecked_mut()`]
-    type WalksFromMut: Iterator<Item = WalkItemMut<'r, Self::EdgeIx, Self::Edge, Self::NodeIx>>;
+    type WalksFromMut: Iterator<
+        Item = WalkItemMut<'r, Self::EdgeIxRef, Self::Edge, Self::NodeIxRef>,
+    >;
 
     /// Mutable counterpart of
     /// [`walks_from_unchecked`](super::GraphOperation::walks_from_unchecked).
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn walks_from_unchecked_mut(&'r mut self, node_ix: Self::NodeIx) -> Self::WalksFromMut;
+    unsafe fn walks_from_unchecked_mut(&'r mut self, node_ix: &Self::NodeIx) -> Self::WalksFromMut;
 
     /// see [`UpdateNode::walks_of_unchecked_mut()`]
-    type WalksOfMut: Iterator<Item = WalkItemMut<'r, Self::EdgeIx, Self::Edge, Self::NodeIx>>;
+    type WalksOfMut: Iterator<Item = WalkItemMut<'r, Self::EdgeIxRef, Self::Edge, Self::NodeIxRef>>;
 
     /// Mutable counterpart of
     /// [`walks_of_unchecked`](super::GraphOperation::walks_of_unchecked).
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn walks_of_unchecked_mut(&'r mut self, node_ix: Self::NodeIx) -> Self::WalksOfMut;
+    unsafe fn walks_of_unchecked_mut(&'r mut self, node_ix: &Self::NodeIx) -> Self::WalksOfMut;
 }
 
 /// Mutable access to edge data.
@@ -164,7 +164,7 @@ pub trait InsertEdge: GraphProperty {
 pub trait UniqueNode: StableNode {
     /// Returns the index of the node whose value equals `node`, or `None`
     /// if no such node exists.
-    fn node_index(&self, node: impl Borrow<Self::Node>) -> Option<Self::NodeIx>;
+    fn node_index(&self, node: &Self::Node) -> Option<Self::NodeIx>;
 }
 
 /// Edge values are unique: at most one edge holds any given value.
@@ -181,7 +181,7 @@ pub trait UniqueNode: StableNode {
 pub trait UniqueEdge: StableEdge {
     /// Returns the index of the edge whose value equals `edge`, or `None`
     /// if no such edge exists.
-    fn edge_index(&self, edge: impl Borrow<Self::Edge>) -> Option<Self::EdgeIx>;
+    fn edge_index(&self, edge: &Self::Edge) -> Option<Self::EdgeIx>;
 }
 
 // ---- Directed / Bigraph ----
@@ -193,11 +193,11 @@ pub trait UniqueEdge: StableEdge {
 /// this trait directly:
 /// [`walks_to`](super::Graph::walks_to),
 /// [`edge_indices_to`](super::Graph::edge_indices_to),
-/// [`edge_tail_indices`](super::Graph::edge_tail_indices),
-/// [`edge_head_indices`](super::Graph::edge_head_indices).
-pub trait Directed<'r>: GraphProperty {
+/// [`tail_indices`](super::Graph::tail_indices),
+/// [`head_indices`](super::Graph::head_indices).
+pub trait Directed<'r>: GraphOperation<'r> {
     /// Iterator over edge indices incoming to a node.
-    type EdgeIndicesTo: Iterator<Item = Self::EdgeIx>;
+    type EdgeIndicesTo: Iterator<Item = Self::EdgeIxRef>;
     /// Iterator over the tail (source) node indices of an edge.
     type EdgeTailIndices: Iterator<Item = Self::NodeIx>;
     /// Iterator over the head (target) node indices of an edge.
@@ -205,40 +205,58 @@ pub trait Directed<'r>: GraphProperty {
 
     /// Iterator over [`WalkItemTo`] wrapping `(source_node, edge, &edge_data)`
     /// triples for incoming edges; deref to obtain the borrowed tuple.
-    type WalksTo: Iterator<Item = WalkItemTo<'r, Self::NodeIx, Self::EdgeIx, Self::Edge>>;
+    type WalksTo: Iterator<Item = WalkItemTo<'r, Self::NodeIxRef, Self::EdgeIxRef, Self::Edge>>;
 
     /// Returns incoming walks to `node_ix`.
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn walks_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksTo;
+    unsafe fn walks_to_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksTo;
 
     /// Returns edge indices incoming to `node_ix`.
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn edge_indices_to_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesTo;
+    unsafe fn edge_indices_to_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesTo;
 
     /// Returns the head (target) node indices of `edge_ix`.
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_head_indices_unchecked(&'r self, edge_ix: Self::EdgeIx)
-        -> Self::EdgeHeadIndices;
+    unsafe fn edge_head_indices_unchecked(
+        &'r self,
+        edge_ix: &Self::EdgeIx,
+    ) -> Self::EdgeHeadIndices;
 
     /// Returns the tail (source) node indices of `edge_ix`.
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_tail_indices_unchecked(&'r self, edge_ix: Self::EdgeIx)
-        -> Self::EdgeTailIndices;
+    unsafe fn edge_tail_indices_unchecked(
+        &'r self,
+        edge_ix: &Self::EdgeIx,
+    ) -> Self::EdgeTailIndices;
+
+    /// Returns the tail (source) node of `edge_ix`, for graphs whose edges
+    /// have exactly one tail (binary edges; see [`Bigraph`]).
+    ///
+    /// # Safety
+    /// `edge_ix` must be a valid edge index currently held by this graph.
+    unsafe fn edge_tail_index_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::NodeIxRef;
+
+    /// Returns the head (target) node of `edge_ix`; see
+    /// [`edge_tail_index_unchecked`](Self::edge_tail_index_unchecked).
+    ///
+    /// # Safety
+    /// `edge_ix` must be a valid edge index currently held by this graph.
+    unsafe fn edge_head_index_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::NodeIxRef;
 }
 
 /// A bigraph (binary graph): each edge connects exactly two nodes.
 ///
 /// Combined with [`Directed`], enables single-node
-/// [`Graph::edge_head`](super::Graph::edge_head) /
-/// [`Graph::edge_tail`](super::Graph::edge_tail) accessors on the
+/// [`Graph::head`](super::Graph::head) /
+/// [`Graph::tail`](super::Graph::tail) accessors on the
 /// [`Graph`](super::Graph) facade.
 pub trait Bigraph: GraphProperty {
     /// Convert an [`Endpoints`](super::GraphProperty::Endpoints) value into a

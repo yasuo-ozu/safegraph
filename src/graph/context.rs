@@ -59,6 +59,140 @@ impl<'scope, I> EdgeIx<'scope, I> {
     }
 }
 
+/// A scoped node index lent by a [`Context`]: the inner graph's
+/// [`NodeIxRef`](GraphOperation::NodeIxRef) `R` under this scope's brand.
+/// Borrows as the scoped [`NodeIx`] without cloning.
+// The brand is a zero-sized marker, so the derived comparisons and `Hash`
+// delegate to `R`, agreeing with the owned `NodeIx` as `Borrow` requires.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NodeIxRef<'scope, R, I>(crate::Invariant<'scope>, R, PhantomData<fn() -> I>);
+
+impl<'scope, R, I> NodeIxRef<'scope, R, I> {
+    /// The inner graph's index handle, without the scope brand.
+    pub fn inner(self) -> R {
+        self.1
+    }
+
+    /// Clones the scoped [`NodeIx`] out of this handle.
+    pub fn to_ix(&self) -> NodeIx<'scope, I>
+    where
+        R: Borrow<I>,
+        I: Clone,
+    {
+        NodeIx(PhantomData, self.1.borrow().clone())
+    }
+}
+
+impl<'scope, R: Display, I> Display for NodeIxRef<'scope, R, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.1.fmt(f)
+    }
+}
+
+impl<'scope, R, I> PartialEq<NodeIx<'scope, I>> for NodeIxRef<'scope, R, I>
+where
+    R: Borrow<I>,
+    I: PartialEq,
+{
+    fn eq(&self, other: &NodeIx<'scope, I>) -> bool {
+        self.1.borrow() == &other.1
+    }
+}
+
+impl<'scope, R, I> PartialEq<NodeIxRef<'scope, R, I>> for NodeIx<'scope, I>
+where
+    R: Borrow<I>,
+    I: PartialEq,
+{
+    fn eq(&self, other: &NodeIxRef<'scope, R, I>) -> bool {
+        &self.1 == other.1.borrow()
+    }
+}
+
+impl<'scope, R, I> Borrow<NodeIx<'scope, I>> for NodeIxRef<'scope, R, I>
+where
+    R: Borrow<I>,
+{
+    fn borrow(&self) -> &NodeIx<'scope, I> {
+        let inner: &I = self.1.borrow();
+        // SAFETY: `NodeIx<'scope, I>` is `#[repr(transparent)]` over `I` (its
+        // other field is a zero-sized brand), so `&I` and `&NodeIx` share layout.
+        unsafe { &*(inner as *const I as *const NodeIx<'scope, I>) }
+    }
+}
+
+impl<'scope, R: fmt::Debug, I> fmt::Debug for NodeIxRef<'scope, R, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.1.fmt(f)
+    }
+}
+
+/// A scoped edge index lent by a [`Context`]; see [`NodeIxRef`].
+// The brand is a zero-sized marker, so the derived comparisons and `Hash`
+// delegate to `R`, agreeing with the owned `EdgeIx` as `Borrow` requires.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EdgeIxRef<'scope, R, I>(crate::Invariant<'scope>, R, PhantomData<fn() -> I>);
+
+impl<'scope, R, I> EdgeIxRef<'scope, R, I> {
+    /// The inner graph's index handle, without the scope brand.
+    pub fn inner(self) -> R {
+        self.1
+    }
+
+    /// Clones the scoped [`EdgeIx`] out of this handle.
+    pub fn to_ix(&self) -> EdgeIx<'scope, I>
+    where
+        R: Borrow<I>,
+        I: Clone,
+    {
+        EdgeIx(PhantomData, self.1.borrow().clone())
+    }
+}
+
+impl<'scope, R: Display, I> Display for EdgeIxRef<'scope, R, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.1.fmt(f)
+    }
+}
+
+impl<'scope, R, I> PartialEq<EdgeIx<'scope, I>> for EdgeIxRef<'scope, R, I>
+where
+    R: Borrow<I>,
+    I: PartialEq,
+{
+    fn eq(&self, other: &EdgeIx<'scope, I>) -> bool {
+        self.1.borrow() == &other.1
+    }
+}
+
+impl<'scope, R, I> PartialEq<EdgeIxRef<'scope, R, I>> for EdgeIx<'scope, I>
+where
+    R: Borrow<I>,
+    I: PartialEq,
+{
+    fn eq(&self, other: &EdgeIxRef<'scope, R, I>) -> bool {
+        &self.1 == other.1.borrow()
+    }
+}
+
+impl<'scope, R, I> Borrow<EdgeIx<'scope, I>> for EdgeIxRef<'scope, R, I>
+where
+    R: Borrow<I>,
+{
+    fn borrow(&self) -> &EdgeIx<'scope, I> {
+        let inner: &I = self.1.borrow();
+        // SAFETY: as for `NodeIxRef`: `EdgeIx<'scope, I>` is
+        // `#[repr(transparent)]` over `I`.
+        unsafe { &*(inner as *const I as *const EdgeIx<'scope, I>) }
+    }
+}
+
+impl<'scope, R: fmt::Debug, I> fmt::Debug for EdgeIxRef<'scope, R, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.1.fmt(f)
+    }
+}
+
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Context<'scope, G: ?Sized> {
@@ -86,13 +220,16 @@ impl<'scope, G: ?Sized + GraphProperty> Context<'scope, G> {
     }
 }
 
-pub struct Walks<'scope, I, Eix, Nix> {
+/// Type-only marker for the inner/outer index types of the walk adapters.
+type IxMarker<Eix, Nix, OEix, ONix> = PhantomData<fn() -> (Eix, Nix, OEix, ONix)>;
+
+pub struct Walks<'scope, I, Eix, Nix, OEix, ONix> {
     inner: I,
     _scope: crate::Invariant<'scope>,
-    _marker: PhantomData<(Eix, Nix)>,
+    _marker: IxMarker<Eix, Nix, OEix, ONix>,
 }
 
-impl<'scope, I, Eix, Nix> Walks<'scope, I, Eix, Nix> {
+impl<'scope, I, Eix, Nix, OEix, ONix> Walks<'scope, I, Eix, Nix, OEix, ONix> {
     fn new(inner: I) -> Self {
         Self {
             inner,
@@ -105,18 +242,23 @@ impl<'scope, I, Eix, Nix> Walks<'scope, I, Eix, Nix> {
 // Brand the indices of each `WalkItem` with the scope, leaving the (erased)
 // edge pointer untouched — so no deref and no `Edge: 'r` bound. The two impls
 // are disjoint (an iterator has a single `Item`).
-impl<'scope, 'r, I, Eix, E: ?Sized, Nix> Iterator for Walks<'scope, I, Eix, Nix>
+impl<'scope, 'r, I, Eix, E: ?Sized, Nix, OEix, ONix> Iterator
+    for Walks<'scope, I, Eix, Nix, OEix, ONix>
 where
     I: Iterator<Item = WalkItem<'r, Eix, E, Nix>>,
 {
-    type Item = WalkItem<'r, EdgeIx<'scope, Eix>, E, NodeIx<'scope, Nix>>;
+    type Item = WalkItem<'r, EdgeIxRef<'scope, Eix, OEix>, E, NodeIxRef<'scope, Nix, ONix>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|wi| {
             let (eix, edge_ptr, nix) = wi.into_parts();
             // SAFETY: `edge_ptr` is valid for `'r` (from the inner `WalkItem`).
             unsafe {
-                WalkItem::from_parts(EdgeIx(PhantomData, eix), edge_ptr, NodeIx(PhantomData, nix))
+                WalkItem::from_parts(
+                    EdgeIxRef(PhantomData, eix, PhantomData),
+                    edge_ptr,
+                    NodeIxRef(PhantomData, nix, PhantomData),
+                )
             }
         })
     }
@@ -125,13 +267,13 @@ where
 /// Mutable counterpart of [`Walks`] (separate struct because coherence cannot
 /// see that an iterator's `Item` is either a `WalkItem` or a `WalkItemMut`,
 /// never both).
-pub struct WalksMut<'scope, I, Eix, Nix> {
+pub struct WalksMut<'scope, I, Eix, Nix, OEix, ONix> {
     inner: I,
     _scope: crate::Invariant<'scope>,
-    _marker: PhantomData<(Eix, Nix)>,
+    _marker: IxMarker<Eix, Nix, OEix, ONix>,
 }
 
-impl<'scope, I, Eix, Nix> WalksMut<'scope, I, Eix, Nix> {
+impl<'scope, I, Eix, Nix, OEix, ONix> WalksMut<'scope, I, Eix, Nix, OEix, ONix> {
     fn new(inner: I) -> Self {
         Self {
             inner,
@@ -141,11 +283,12 @@ impl<'scope, I, Eix, Nix> WalksMut<'scope, I, Eix, Nix> {
     }
 }
 
-impl<'scope, 'r, I, Eix, E: ?Sized, Nix> Iterator for WalksMut<'scope, I, Eix, Nix>
+impl<'scope, 'r, I, Eix, E: ?Sized, Nix, OEix, ONix> Iterator
+    for WalksMut<'scope, I, Eix, Nix, OEix, ONix>
 where
     I: Iterator<Item = WalkItemMut<'r, Eix, E, Nix>>,
 {
-    type Item = WalkItemMut<'r, EdgeIx<'scope, Eix>, E, NodeIx<'scope, Nix>>;
+    type Item = WalkItemMut<'r, EdgeIxRef<'scope, Eix, OEix>, E, NodeIxRef<'scope, Nix, ONix>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|wi| {
@@ -153,9 +296,9 @@ where
             // SAFETY: `edge_ptr` is uniquely valid for `'r` (from the inner item).
             unsafe {
                 WalkItemMut::from_parts(
-                    EdgeIx(PhantomData, eix),
+                    EdgeIxRef(PhantomData, eix, PhantomData),
                     edge_ptr,
-                    NodeIx(PhantomData, nix),
+                    NodeIxRef(PhantomData, nix, PhantomData),
                 )
             }
         })
@@ -177,7 +320,7 @@ where
 /// g.push(10).unwrap();
 /// g.push(20).unwrap();
 /// g.scope_mut(|ctx| {
-///     let n: Vec<_> = ctx.node_indices().collect();
+///     let n: Vec<_> = ctx.node_indices().map(|n| n.to_ix()).collect();
 ///     ctx.remove_nodes_edges(n, []);
 /// });
 /// assert_eq!(g.len_node(), 0);
@@ -373,51 +516,37 @@ where
     }
 }
 
-/// Iterator returned by [`Context`]'s `node_indices`: brands each index of the
-/// inner graph, cloning it out of the inner
-/// [`NodeIxRef`](GraphOperation::NodeIxRef).
-pub struct NodeIndicesIter<'scope, I, Ix> {
+/// Brands each item of the inner iterator as a [`NodeIxRef`] (no clone).
+pub struct NodeIxRefIter<'scope, I, Ix> {
     iter: I,
-    _marker: PhantomData<fn() -> Ix>,
     _scope: crate::Invariant<'scope>,
+    _ix: PhantomData<fn() -> Ix>,
 }
 
-impl<'scope, I, Ix> Iterator for NodeIndicesIter<'scope, I, Ix>
-where
-    I: Iterator,
-    I::Item: Borrow<Ix>,
-    Ix: Clone,
-{
-    type Item = NodeIx<'scope, Ix>;
+impl<'scope, I: Iterator, Ix> Iterator for NodeIxRefIter<'scope, I, Ix> {
+    type Item = NodeIxRef<'scope, I::Item, Ix>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter
             .next()
-            .map(|ix| NodeIx(PhantomData, ix.borrow().clone()))
+            .map(|ix| NodeIxRef(PhantomData, ix, PhantomData))
     }
 }
 
-/// Iterator returned by [`Context`]'s `edge_indices`: brands each index of the
-/// inner graph, cloning it out of the inner
-/// [`EdgeIxRef`](GraphOperation::EdgeIxRef).
-pub struct EdgeIndicesIter<'scope, I, Ix> {
+/// Brands each item of the inner iterator as an [`EdgeIxRef`] (no clone).
+pub struct EdgeIxRefIter<'scope, I, Ix> {
     iter: I,
-    _marker: PhantomData<fn() -> Ix>,
     _scope: crate::Invariant<'scope>,
+    _ix: PhantomData<fn() -> Ix>,
 }
 
-impl<'scope, I, Ix> Iterator for EdgeIndicesIter<'scope, I, Ix>
-where
-    I: Iterator,
-    I::Item: Borrow<Ix>,
-    Ix: Clone,
-{
-    type Item = EdgeIx<'scope, Ix>;
+impl<'scope, I: Iterator, Ix> Iterator for EdgeIxRefIter<'scope, I, Ix> {
+    type Item = EdgeIxRef<'scope, I::Item, Ix>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter
             .next()
-            .map(|ix| EdgeIx(PhantomData, ix.borrow().clone()))
+            .map(|ix| EdgeIxRef(PhantomData, ix, PhantomData))
     }
 }
 
@@ -448,30 +577,34 @@ where
     }
 
     #[inline]
-    fn contains_edge_index(&self, EdgeIx(_, _edge_ix): Self::EdgeIx) -> bool {
+    fn contains_edge_index(&self, EdgeIx(_, _edge_ix): &Self::EdgeIx) -> bool {
         true
     }
 
-    type NodeIxRef = Self::NodeIx;
-    type NodeIndices = NodeIndicesIter<'scope, <G as GraphOperation<'r>>::NodeIndices, G::NodeIx>;
-    type EdgeIxRef = Self::EdgeIx;
-    type EdgeIndices = EdgeIndicesIter<'scope, <G as GraphOperation<'r>>::EdgeIndices, G::EdgeIx>;
+    type NodeIxRef =
+        NodeIxRef<'scope, <G as GraphOperation<'r>>::NodeIxRef, <G as GraphProperty>::NodeIx>;
+    type NodeIndices =
+        NodeIxRefIter<'scope, <G as GraphOperation<'r>>::NodeIndices, <G as GraphProperty>::NodeIx>;
+    type EdgeIxRef =
+        EdgeIxRef<'scope, <G as GraphOperation<'r>>::EdgeIxRef, <G as GraphProperty>::EdgeIx>;
+    type EdgeIndices =
+        EdgeIxRefIter<'scope, <G as GraphOperation<'r>>::EdgeIndices, <G as GraphProperty>::EdgeIx>;
 
     #[inline]
     fn node_indices(&'r self) -> Self::NodeIndices {
-        NodeIndicesIter {
+        NodeIxRefIter {
             iter: <G as GraphOperation<'r>>::node_indices(&self.graph),
-            _marker: PhantomData,
             _scope: PhantomData,
+            _ix: PhantomData,
         }
     }
 
     #[inline]
     fn edge_indices(&'r self) -> Self::EdgeIndices {
-        EdgeIndicesIter {
+        EdgeIxRefIter {
             iter: <G as GraphOperation<'r>>::edge_indices(&self.graph),
-            _marker: PhantomData,
             _scope: PhantomData,
+            _ix: PhantomData,
         }
     }
 
@@ -485,62 +618,88 @@ where
         <G as GraphOperation<'_>>::edge_unchecked(&self.graph, edge_ix)
     }
 
+    type EndpointsRef = NodeIxRefIter<
+        'scope,
+        <<G as GraphOperation<'r>>::EndpointsRef as IntoIterator>::IntoIter,
+        <G as GraphProperty>::NodeIx,
+    >;
+
     #[inline]
-    unsafe fn endpoints_unchecked(&self, EdgeIx(_, edge_ix): Self::EdgeIx) -> Self::Endpoints {
-        <G as GraphOperation<'_>>::endpoints_unchecked(&self.graph, edge_ix)
-            .map_forward(|nix| NodeIx(PhantomData, nix))
+    unsafe fn endpoints_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::EndpointsRef {
+        let EdgeIx(_, edge_ix) = edge_ix;
+        NodeIxRefIter {
+            iter: unsafe { <G as GraphOperation<'r>>::endpoints_unchecked(&self.graph, edge_ix) }
+                .into_iter(),
+            _scope: PhantomData,
+            _ix: PhantomData,
+        }
     }
 
-    type EdgeIndicesFrom = EdgeIxIter<'scope, <G as GraphOperation<'r>>::EdgeIndicesFrom>;
+    type EdgeIndicesFrom = EdgeIxRefIter<
+        'scope,
+        <G as GraphOperation<'r>>::EdgeIndicesFrom,
+        <G as GraphProperty>::EdgeIx,
+    >;
 
     #[inline]
     unsafe fn edge_indices_from_unchecked(
         &'r self,
-        NodeIx(_, node_ix): &Self::NodeIx,
+        node_ix: &Self::NodeIx,
     ) -> Self::EdgeIndicesFrom {
-        EdgeIxIter {
+        let NodeIx(_, node_ix) = node_ix;
+        EdgeIxRefIter {
             iter: unsafe {
                 <G as GraphOperation<'r>>::edge_indices_from_unchecked(&self.graph, node_ix)
             },
             _scope: PhantomData,
+            _ix: PhantomData,
         }
     }
 
-    type EdgeIndicesOf = EdgeIxIter<'scope, <G as GraphOperation<'r>>::EdgeIndicesOf>;
+    type EdgeIndicesOf = EdgeIxRefIter<
+        'scope,
+        <G as GraphOperation<'r>>::EdgeIndicesOf,
+        <G as GraphProperty>::EdgeIx,
+    >;
 
     #[inline]
-    unsafe fn edge_indices_of_unchecked(
-        &'r self,
-        NodeIx(_, node_ix): Self::NodeIx,
-    ) -> Self::EdgeIndicesOf {
-        EdgeIxIter {
+    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesOf {
+        let NodeIx(_, node_ix) = node_ix;
+        EdgeIxRefIter {
             iter: unsafe {
                 <G as GraphOperation<'r>>::edge_indices_of_unchecked(&self.graph, node_ix)
             },
             _scope: PhantomData,
+            _ix: PhantomData,
         }
     }
 
     type WalksFrom = Walks<
         'scope,
         <G as GraphOperation<'r>>::WalksFrom,
+        <G as GraphOperation<'r>>::EdgeIxRef,
+        <G as GraphOperation<'r>>::NodeIxRef,
         <G as GraphProperty>::EdgeIx,
         <G as GraphProperty>::NodeIx,
     >;
     type WalksOf = Walks<
         'scope,
         <G as GraphOperation<'r>>::WalksOf,
+        <G as GraphOperation<'r>>::EdgeIxRef,
+        <G as GraphOperation<'r>>::NodeIxRef,
         <G as GraphProperty>::EdgeIx,
         <G as GraphProperty>::NodeIx,
     >;
 
     #[inline]
-    unsafe fn walks_from_unchecked(&'r self, NodeIx(_, node_ix): Self::NodeIx) -> Self::WalksFrom {
+    unsafe fn walks_from_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksFrom {
+        let NodeIx(_, node_ix) = node_ix;
         Walks::new(unsafe { <G as GraphOperation<'r>>::walks_from_unchecked(&self.graph, node_ix) })
     }
 
     #[inline]
-    unsafe fn walks_of_unchecked(&'r self, NodeIx(_, node_ix): Self::NodeIx) -> Self::WalksOf {
+    unsafe fn walks_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksOf {
+        let NodeIx(_, node_ix) = node_ix;
         Walks::new(unsafe { <G as GraphOperation<'r>>::walks_of_unchecked(&self.graph, node_ix) })
     }
 
@@ -590,45 +749,47 @@ where
     const DIRECTED: bool = G::DIRECTED;
 }
 
-impl<'scope, 'r, G: 'r + ?Sized> Directed<'r> for Context<'scope, G>
+impl<'scope, 'r, G: ?Sized> Directed<'r> for Context<'scope, G>
 where
-    G: Directed<'r>,
-    Self: super::Graph<
-        NodeIx = NodeIx<'scope, G::NodeIx>,
-        EdgeIx = EdgeIx<'scope, G::EdgeIx>,
-        Node = G::Node,
-        Edge = G::Edge,
-    >,
+    G: for<'x> Directed<'x>,
+    <G as GraphProperty>::Endpoints: Map<NodeIx<'scope, <G as GraphProperty>::NodeIx>>,
 {
-    type EdgeIndicesTo = EdgeIxIter<'scope, G::EdgeIndicesTo>;
-    type EdgeTailIndices = NodeIxIter<'scope, G::EdgeTailIndices>;
-    type EdgeHeadIndices = NodeIxIter<'scope, G::EdgeHeadIndices>;
+    type EdgeIndicesTo =
+        EdgeIxRefIter<'scope, <G as Directed<'r>>::EdgeIndicesTo, <G as GraphProperty>::EdgeIx>;
+    type EdgeTailIndices = NodeIxIter<'scope, <G as Directed<'r>>::EdgeTailIndices>;
+    type EdgeHeadIndices = NodeIxIter<'scope, <G as Directed<'r>>::EdgeHeadIndices>;
     type WalksTo = std::iter::Map<
-        G::WalksTo,
+        <G as Directed<'r>>::WalksTo,
         fn(
             WalkItemTo<
                 'r,
-                <G as GraphProperty>::NodeIx,
-                <G as GraphProperty>::EdgeIx,
+                <G as GraphOperation<'r>>::NodeIxRef,
+                <G as GraphOperation<'r>>::EdgeIxRef,
                 <G as GraphProperty>::Edge,
             >,
         ) -> WalkItemTo<
             'r,
-            NodeIx<'scope, <G as GraphProperty>::NodeIx>,
-            EdgeIx<'scope, <G as GraphProperty>::EdgeIx>,
+            NodeIxRef<'scope, <G as GraphOperation<'r>>::NodeIxRef, <G as GraphProperty>::NodeIx>,
+            EdgeIxRef<'scope, <G as GraphOperation<'r>>::EdgeIxRef, <G as GraphProperty>::EdgeIx>,
             <G as GraphProperty>::Edge,
         >,
     >;
 
-    unsafe fn walks_to_unchecked(&'r self, NodeIx(_, node_ix): Self::NodeIx) -> Self::WalksTo {
+    unsafe fn walks_to_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksTo {
+        let NodeIx(_, node_ix) = node_ix;
         <G as Directed<'r>>::walks_to_unchecked(&self.graph, node_ix).map(
-            (|wi: WalkItemTo<'r, G::NodeIx, G::EdgeIx, G::Edge>| {
+            (|wi: WalkItemTo<
+                'r,
+                <G as GraphOperation<'r>>::NodeIxRef,
+                <G as GraphOperation<'r>>::EdgeIxRef,
+                G::Edge,
+            >| {
                 let (nix, eix, edge_ptr) = wi.into_parts();
                 // SAFETY: `edge_ptr` is valid for `'r` (from the inner item).
                 unsafe {
                     WalkItemTo::from_parts(
-                        NodeIx(PhantomData, nix),
-                        EdgeIx(PhantomData, eix),
+                        NodeIxRef(PhantomData, nix, PhantomData),
+                        EdgeIxRef(PhantomData, eix, PhantomData),
                         edge_ptr,
                     )
                 }
@@ -636,20 +797,20 @@ where
         )
     }
 
-    unsafe fn edge_indices_to_unchecked(
-        &'r self,
-        NodeIx(_, node_ix): Self::NodeIx,
-    ) -> Self::EdgeIndicesTo {
-        EdgeIxIter {
+    unsafe fn edge_indices_to_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesTo {
+        let NodeIx(_, node_ix) = node_ix;
+        EdgeIxRefIter {
             iter: <G as Directed<'r>>::edge_indices_to_unchecked(&self.graph, node_ix),
             _scope: PhantomData,
+            _ix: PhantomData,
         }
     }
 
     unsafe fn edge_tail_indices_unchecked(
         &'r self,
-        EdgeIx(_, edge_ix): Self::EdgeIx,
+        edge_ix: &Self::EdgeIx,
     ) -> Self::EdgeTailIndices {
+        let EdgeIx(_, edge_ix) = edge_ix;
         NodeIxIter {
             iter: <G as Directed<'r>>::edge_tail_indices_unchecked(&self.graph, edge_ix),
             _scope: PhantomData,
@@ -658,12 +819,25 @@ where
 
     unsafe fn edge_head_indices_unchecked(
         &'r self,
-        EdgeIx(_, edge_ix): Self::EdgeIx,
+        edge_ix: &Self::EdgeIx,
     ) -> Self::EdgeHeadIndices {
+        let EdgeIx(_, edge_ix) = edge_ix;
         NodeIxIter {
             iter: <G as Directed<'r>>::edge_head_indices_unchecked(&self.graph, edge_ix),
             _scope: PhantomData,
         }
+    }
+
+    unsafe fn edge_tail_index_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::NodeIxRef {
+        let EdgeIx(_, edge_ix) = edge_ix;
+        let tail = <G as Directed<'r>>::edge_tail_index_unchecked(&self.graph, edge_ix);
+        NodeIxRef(PhantomData, tail, PhantomData)
+    }
+
+    unsafe fn edge_head_index_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::NodeIxRef {
+        let EdgeIx(_, edge_ix) = edge_ix;
+        let head = <G as Directed<'r>>::edge_head_index_unchecked(&self.graph, edge_ix);
+        NodeIxRef(PhantomData, head, PhantomData)
     }
 }
 
@@ -697,15 +871,8 @@ where
 
 impl<'r, 'scope, G: ?Sized> UpdateNode<'r> for Context<'scope, G>
 where
-    Self: super::Graph<
-        Edge = G::Edge,
-        EdgeIx = EdgeIx<'scope, G::EdgeIx>,
-        Node = G::Node,
-        NodeIx = NodeIx<'scope, G::NodeIx>,
-    >,
-    G: UpdateNode<'r>,
-    G::Edge: 'r,
-    G::Endpoints: Map<NodeIx<'scope, G::NodeIx>, Mapped = Self::Endpoints>,
+    G: for<'x> UpdateNode<'x>,
+    <G as GraphProperty>::Endpoints: Map<NodeIx<'scope, <G as GraphProperty>::NodeIx>>,
 {
     unsafe fn node_unchecked_mut(&mut self, NodeIx(_, node_ix): Self::NodeIx) -> &mut Self::Node {
         <G as UpdateNode<'_>>::node_unchecked_mut(&mut self.graph, node_ix)
@@ -714,13 +881,13 @@ where
     type WalksFromMut = WalksMut<
         'scope,
         <G as UpdateNode<'r>>::WalksFromMut,
+        <G as GraphOperation<'r>>::EdgeIxRef,
+        <G as GraphOperation<'r>>::NodeIxRef,
         <G as GraphProperty>::EdgeIx,
         <G as GraphProperty>::NodeIx,
     >;
-    unsafe fn walks_from_unchecked_mut(
-        &'r mut self,
-        NodeIx(_, node_ix): Self::NodeIx,
-    ) -> Self::WalksFromMut {
+    unsafe fn walks_from_unchecked_mut(&'r mut self, node_ix: &Self::NodeIx) -> Self::WalksFromMut {
+        let NodeIx(_, node_ix) = node_ix;
         WalksMut::new(<G as UpdateNode<'r>>::walks_from_unchecked_mut(
             &mut self.graph,
             node_ix,
@@ -730,13 +897,13 @@ where
     type WalksOfMut = WalksMut<
         'scope,
         <G as UpdateNode<'r>>::WalksOfMut,
+        <G as GraphOperation<'r>>::EdgeIxRef,
+        <G as GraphOperation<'r>>::NodeIxRef,
         <G as GraphProperty>::EdgeIx,
         <G as GraphProperty>::NodeIx,
     >;
-    unsafe fn walks_of_unchecked_mut(
-        &'r mut self,
-        NodeIx(_, node_ix): Self::NodeIx,
-    ) -> Self::WalksOfMut {
+    unsafe fn walks_of_unchecked_mut(&'r mut self, node_ix: &Self::NodeIx) -> Self::WalksOfMut {
+        let NodeIx(_, node_ix) = node_ix;
         WalksMut::new(<G as UpdateNode<'r>>::walks_of_unchecked_mut(
             &mut self.graph,
             node_ix,
@@ -803,7 +970,7 @@ where
     G: super::Graph + UniqueNode,
     Self: super::Graph<NodeIx = NodeIx<'scope, G::NodeIx>, Node = G::Node>,
 {
-    fn node_index(&self, node: impl Borrow<Self::Node>) -> Option<Self::NodeIx> {
+    fn node_index(&self, node: &Self::Node) -> Option<Self::NodeIx> {
         <G as UniqueNode>::node_index(&self.graph, node).map(|ix| NodeIx(PhantomData, ix))
     }
 }
@@ -812,7 +979,7 @@ where
     G: super::Graph + UniqueEdge,
     Self: super::Graph<EdgeIx = EdgeIx<'scope, G::EdgeIx>, Edge = G::Edge>,
 {
-    fn edge_index(&self, edge: impl Borrow<Self::Edge>) -> Option<Self::EdgeIx> {
+    fn edge_index(&self, edge: &Self::Edge) -> Option<Self::EdgeIx> {
         <G as UniqueEdge>::edge_index(&self.graph, edge).map(|ix| EdgeIx(PhantomData, ix))
     }
 }

@@ -109,7 +109,7 @@ fn vec_edge_tail_index_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
         |g: &VecGraph<u32, u32>, e: u32| -> u32 {
-            unsafe { g.unsafe_assert_stable_node().edge_tail_index_unchecked(e) }
+            unsafe { g.unsafe_assert_stable_node().tail_index_unchecked(e) }
         },
     );
 }
@@ -119,7 +119,7 @@ fn vec_edge_head_index_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
         |g: &VecGraph<u32, u32>, e: u32| -> u32 {
-            unsafe { g.unsafe_assert_stable_node().edge_head_index_unchecked(e) }
+            unsafe { g.unsafe_assert_stable_node().head_index_unchecked(e) }
         },
     );
 }
@@ -129,7 +129,7 @@ fn vec_edge_tail_load_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
         |g: &VecGraph<u32, u32>, e: u32| -> u32 {
-            *unsafe { g.unsafe_assert_stable_node().edge_tail_unchecked(e) }
+            *unsafe { g.unsafe_assert_stable_node().tail_unchecked(e) }
         },
     );
 }
@@ -139,7 +139,7 @@ fn vec_edge_head_load_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
         |g: &VecGraph<u32, u32>, e: u32| -> u32 {
-            *unsafe { g.unsafe_assert_stable_node().edge_head_unchecked(e) }
+            *unsafe { g.unsafe_assert_stable_node().head_unchecked(e) }
         },
     );
 }
@@ -149,7 +149,7 @@ fn vec_edge_tail_indices_first_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
         |g: &VecGraph<u32, u32>, e: u32| -> Option<u32> {
-            unsafe { g.unsafe_assert_stable_node().edge_tail_indices_unchecked(e) }.next()
+            unsafe { g.unsafe_assert_stable_node().tail_indices_unchecked(e) }.next()
         },
     );
 }
@@ -159,7 +159,7 @@ fn vec_edge_head_indices_first_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
         |g: &VecGraph<u32, u32>, e: u32| -> Option<u32> {
-            unsafe { g.unsafe_assert_stable_node().edge_head_indices_unchecked(e) }.next()
+            unsafe { g.unsafe_assert_stable_node().head_indices_unchecked(e) }.next()
         },
     );
 }
@@ -284,7 +284,7 @@ fn wide_edge_tail_load_no_calls() {
     assert_ir!(
         target_x86_64_unknown_linux_gnu & calls.len().eq(0),
         |g: &VecGraph<Wide, Wide>, e: u32| -> u32 {
-            unsafe { g.unsafe_assert_stable_node().edge_tail_index_unchecked(e) }
+            unsafe { g.unsafe_assert_stable_node().tail_index_unchecked(e) }
         },
     );
 }

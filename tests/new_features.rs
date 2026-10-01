@@ -20,10 +20,11 @@ fn endpoints_from_array_vecgraph_round_trip() {
         let n1 = ctx.insert_node(20).unwrap();
         let e0 = ctx.insert_edge(100, [n0, n1]).unwrap();
 
-        let endpoints = ctx.endpoints(e0);
-        let arr = <safegraph::graph::context::Context<'_, VecGraph<u32, u32>> as Bigraph>::endpoints_as_array(endpoints);
-        let reconstructed = <safegraph::graph::context::Context<'_, VecGraph<u32, u32>> as Bigraph>::endpoints_from_array(arr);
-        assert_eq!(reconstructed, endpoints);
+        let endpoints: Vec<_> = ctx.endpoints(e0).map(|n| n.to_ix()).collect();
+        assert_eq!(endpoints, [n0, n1]);
+        let built = <safegraph::graph::context::Context<'_, VecGraph<u32, u32>> as Bigraph>::endpoints_from_array([n0, n1]);
+        let arr = <safegraph::graph::context::Context<'_, VecGraph<u32, u32>> as Bigraph>::endpoints_as_array(built);
+        assert_eq!(arr, [n0, n1]);
     });
 }
 
@@ -34,12 +35,10 @@ fn endpoints_from_array_btreegraph_round_trip() {
     let n1 = g.insert_node(20).unwrap();
     let e0 = g.insert_edge(100, [n0, n1]).unwrap();
 
-    let endpoints = g.endpoints(e0);
+    assert_eq!(g.endpoints(e0), [&n0, &n1]);
+    let endpoints = BTreeGraph::<u32, u32>::endpoints_from_array([n0, n1]);
     let arr = BTreeGraph::<u32, u32>::endpoints_as_array(endpoints);
     assert_eq!(arr, [n0, n1]);
-
-    let reconstructed = BTreeGraph::<u32, u32>::endpoints_from_array(arr);
-    assert_eq!(reconstructed, endpoints);
 }
 
 #[test]
@@ -49,12 +48,10 @@ fn endpoints_from_array_hashgraph_round_trip() {
     let n1 = g.insert_node(20).unwrap();
     let e0 = g.insert_edge(100, [n0, n1]).unwrap();
 
-    let endpoints = g.endpoints(e0);
+    assert_eq!(g.endpoints(e0), [&n0, &n1]);
+    let endpoints = HashGraph::<u32, u32>::endpoints_from_array([n0, n1]);
     let arr = HashGraph::<u32, u32>::endpoints_as_array(endpoints);
     assert_eq!(arr, [n0, n1]);
-
-    let reconstructed = HashGraph::<u32, u32>::endpoints_from_array(arr);
-    assert_eq!(reconstructed, endpoints);
 }
 
 // ---------------------------------------------------------------------------
@@ -69,8 +66,10 @@ fn drain_vecgraph_returns_all_nodes_and_edges() {
     let _ = g.push(30);
     g.scope_mut(|mut ctx| {
         let indices: Vec<_> = ctx.node_indices().collect();
-        ctx.insert_edge(100, [indices[0], indices[1]]).unwrap();
-        ctx.insert_edge(200, [indices[1], indices[2]]).unwrap();
+        ctx.insert_edge(100, [*indices[0].borrow(), *indices[1].borrow()])
+            .unwrap();
+        ctx.insert_edge(200, [*indices[1].borrow(), *indices[2].borrow()])
+            .unwrap();
     });
 
     let (nodes, edges) = g.drain();
@@ -213,7 +212,7 @@ fn extend_graph_preserves_edge_connectivity() {
     for eix in g1.edge_indices() {
         let ep = g1.endpoints(*eix);
         for nix in ep {
-            assert!(g1.contains_node_index(&nix));
+            assert!(g1.contains_node_index(nix));
         }
     }
 }
@@ -257,9 +256,9 @@ fn hashgraph_insert_nodes_and_edges() {
     let n2 = g.insert_node(3).unwrap();
 
     assert_eq!(g.len_node(), 3);
-    assert!(g.contains_node_index(&n0));
-    assert!(g.contains_node_index(&n1));
-    assert!(g.contains_node_index(&n2));
+    assert!(g.contains_node_index(n0));
+    assert!(g.contains_node_index(n1));
+    assert!(g.contains_node_index(n2));
 
     let e0 = g.insert_edge(10, [n0, n1]).unwrap();
     let e1 = g.insert_edge(20, [n1, n2]).unwrap();
@@ -278,7 +277,7 @@ fn hashgraph_query_node_and_edge() {
 
     assert_eq!(*g.node(1), 1);
     assert_eq!(*g.edge(10), 10);
-    assert_eq!(g.endpoints(10), [1, 2]);
+    assert_eq!(g.endpoints(10), [&1, &2]);
 }
 
 #[test]
@@ -321,7 +320,7 @@ fn hashgraph_remove_node_cascades_edges() {
 
     g.remove_node(2);
 
-    assert!(!g.contains_node_index(&2));
+    assert!(!g.contains_node_index(2));
     assert_eq!(g.len_node(), 2);
     assert_eq!(g.len_edge(), 0);
 }
@@ -339,7 +338,7 @@ fn hashgraph_adjacency_walks() {
     assert_eq!(walks.len(), 2);
 
     // Verify all neighbors are reachable
-    let neighbor_nodes: Vec<u32> = walks.iter().map(|&(_, _, nix)| nix).collect();
+    let neighbor_nodes: Vec<u32> = walks.iter().map(|&(_, _, nix)| *nix).collect();
     assert!(neighbor_nodes.contains(&2));
     assert!(neighbor_nodes.contains(&3));
 }
@@ -351,8 +350,8 @@ fn hashgraph_directed_tail_head() {
     g.insert_node(2).unwrap();
     g.insert_edge(10, [1, 2]).unwrap();
 
-    assert_eq!(g.edge_tail_index(10), 1);
-    assert_eq!(g.edge_head_index(10), 2);
+    assert_eq!(*g.tail_index(10), 1);
+    assert_eq!(*g.head_index(10), 2);
 }
 
 #[test]
@@ -360,8 +359,8 @@ fn hashgraph_unique_node_lookup() {
     let mut g = HashGraph::<u32, u32>::new();
     g.insert_node(42).unwrap();
 
-    assert_eq!(g.node_index(42), Some(42));
-    assert_eq!(g.node_index(99), None);
+    assert_eq!(g.node_index(&42), Some(42));
+    assert_eq!(g.node_index(&99), None);
 }
 
 #[test]
@@ -371,8 +370,8 @@ fn hashgraph_unique_edge_lookup() {
     g.insert_node(2).unwrap();
     g.insert_edge(10, [1, 2]).unwrap();
 
-    assert_eq!(g.edge_index(10), Some(10));
-    assert_eq!(g.edge_index(99), None);
+    assert_eq!(g.edge_index(&10), Some(10));
+    assert_eq!(g.edge_index(&99), None);
 }
 
 #[test]
@@ -382,13 +381,13 @@ fn hashgraph_reverse() {
     g.insert_node(2).unwrap();
     g.insert_edge(10, [1, 2]).unwrap();
 
-    assert_eq!(g.edge_tail_index(10), 1);
-    assert_eq!(g.edge_head_index(10), 2);
+    assert_eq!(*g.tail_index(10), 1);
+    assert_eq!(*g.head_index(10), 2);
 
     g.reverse();
 
-    assert_eq!(g.edge_tail_index(10), 2);
-    assert_eq!(g.edge_head_index(10), 1);
+    assert_eq!(*g.tail_index(10), 2);
+    assert_eq!(*g.head_index(10), 1);
 }
 
 #[test]
@@ -399,8 +398,8 @@ fn hashgraph_map_transform() {
     g.insert_edge(10, [1, 2]).unwrap();
 
     let g2 = g.map(|n| n * 10, |e| e * 10);
-    assert!(g2.contains_node_index(&10));
-    assert!(g2.contains_node_index(&20));
+    assert!(g2.contains_node_index(10));
+    assert!(g2.contains_node_index(20));
     assert!(g2.contains_edge_index(100));
 }
 
@@ -418,7 +417,7 @@ fn hashgraph_self_loop() {
     g.insert_edge(10, [1, 1]).unwrap();
 
     assert_eq!(g.len_edge(), 1);
-    assert_eq!(g.endpoints(10), [1, 1]);
+    assert_eq!(g.endpoints(10), [&1, &1]);
 }
 
 #[test]
@@ -464,9 +463,12 @@ where
     g.insert_edge(s("cd"), [s("c"), s("d")]).unwrap();
     g.insert_edge(s("da"), [s("d"), s("a")]).unwrap();
 
-    assert_eq!(g.edge_tail_index(s("bc")), "b");
-    assert_eq!(g.edge_head_index(s("bc")), "c");
-    let from_b: Vec<String> = g.edge_indices_from(s("b")).collect();
+    assert_eq!(Borrow::<String>::borrow(&g.tail_index(s("bc"))), "b");
+    assert_eq!(Borrow::<String>::borrow(&g.head_index(s("bc"))), "c");
+    let from_b: Vec<String> = g
+        .edge_indices_from(s("b"))
+        .map(|e| e.borrow().clone())
+        .collect();
     assert_eq!(from_b, ["bc"]);
     assert!(safegraph::algo::connectivity::has_path_connecting(
         &g,

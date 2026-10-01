@@ -59,6 +59,7 @@
 //! assert_eq!(sccs[0].len(), 3);
 //! ```
 
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 use super::bfs::Bfs;
@@ -88,7 +89,7 @@ pub fn tarjan_scc<'r, G>(
     graph: &'r G,
 ) -> TarjanScc<'r, G, G::NodeIx, super::OwnedNodeIndices<'r, G>>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     TarjanScc {
         graph,
@@ -104,7 +105,7 @@ where
 
 impl<'r, G> Iterator for TarjanScc<'r, G, G::NodeIx, super::OwnedNodeIndices<'r, G>>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     type Item = Vec<G::NodeIx>;
 
@@ -124,8 +125,7 @@ where
                         self.on_stack.insert(succ.clone());
 
                         let succ_succs: Vec<G::NodeIx> =
-                            unsafe { self.graph.neighbor_indices_from_unchecked(succ.clone()) }
-                                .collect();
+                            unsafe { self.graph.neighbor_indices_from_unchecked(&succ) }.collect();
                         self.dfs_stack.push((succ, succ_succs, 0));
                     } else if self.on_stack.contains(&succ) {
                         let succ_index = self.index[&succ];
@@ -174,8 +174,7 @@ where
                         self.on_stack.insert(node.clone());
 
                         let succs: Vec<G::NodeIx> =
-                            unsafe { self.graph.neighbor_indices_from_unchecked(node.clone()) }
-                                .collect();
+                            unsafe { self.graph.neighbor_indices_from_unchecked(&node) }.collect();
                         self.dfs_stack.push((node, succs, 0));
                         break;
                     }
@@ -201,7 +200,7 @@ pub struct KosarajuScc<'r, G: ?Sized, N> {
 /// Returns an iterator yielding SCCs.
 pub fn kosaraju_scc<'r, G>(graph: &'r G) -> KosarajuScc<'r, G, G::NodeIx>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     // Phase 1: Compute finish order via DFS (eagerly)
     let mut visited = HashSet::new();
@@ -246,7 +245,7 @@ where
 
 impl<'r, G> Iterator for KosarajuScc<'r, G, G::NodeIx>
 where
-    G: Graph + Directed<'r> + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
     type Item = Vec<G::NodeIx>;
 
@@ -286,7 +285,7 @@ where
 /// Returns `true` if the directed graph contains a cycle.
 pub fn is_cyclic_directed<G>(graph: &G) -> bool
 where
-    G: Graph + for<'a> Directed<'a> + ?Sized,
+    G: Graph + for<'x> Directed<'x> + ?Sized,
     <G as crate::graph::GraphProperty>::Endpoints: for<'scope> crate::graph::edge::Map<
         crate::graph::context::NodeIx<'scope, <G as crate::graph::GraphProperty>::NodeIx>,
     >,
@@ -319,13 +318,15 @@ where
         while let Some(n) = stack.pop() {
             // SAFETY: `n` is an in-graph index (from the loop / prior neighbors).
             for wi in
-                unsafe { <G as crate::graph::GraphOperation<'_>>::walks_of_unchecked(graph, n) }
+                unsafe { <G as crate::graph::GraphOperation<'_>>::walks_of_unchecked(graph, &n) }
             {
                 // Only the neighbor index is needed; take it from the raw parts
                 // (no edge deref, so no `G::Edge: '_` bound).
                 let neighbor = wi.into_parts().2;
-                if visited.insert(neighbor.clone()) {
-                    stack.push(neighbor);
+                let neighbor = neighbor.borrow();
+                if !visited.contains(neighbor) {
+                    visited.insert(neighbor.clone());
+                    stack.push(neighbor.clone());
                 }
             }
         }
@@ -337,7 +338,7 @@ where
 /// Returns `true` if there is a directed path from `source` to `target`.
 pub fn has_path_connecting<'r, G>(graph: &'r G, source: G::NodeIx, target: G::NodeIx) -> bool
 where
-    G: Graph + Directed<'r> + ?Sized,
+    G: Graph + for<'x> Directed<'x> + ?Sized,
     <G as crate::graph::GraphProperty>::Endpoints: for<'scope> crate::graph::edge::Map<
         crate::graph::context::NodeIx<'scope, <G as crate::graph::GraphProperty>::NodeIx>,
         Mapped = [crate::graph::context::NodeIx<'scope, <G as crate::graph::GraphProperty>::NodeIx>;
@@ -363,7 +364,7 @@ pub unsafe fn has_path_connecting_unchecked<'r, G>(
     target: G::NodeIx,
 ) -> bool
 where
-    G: Graph + Directed<'r> + ?Sized,
+    G: Graph + for<'x> Directed<'x> + ?Sized,
     <G as crate::graph::GraphProperty>::Endpoints: for<'scope> crate::graph::edge::Map<
         crate::graph::context::NodeIx<'scope, <G as crate::graph::GraphProperty>::NodeIx>,
         Mapped = [crate::graph::context::NodeIx<'scope, <G as crate::graph::GraphProperty>::NodeIx>;
@@ -390,7 +391,7 @@ where
 /// If `make_acyclic` is true, self-loops in the condensed graph are omitted.
 pub fn condensation<'r, G>(graph: &'r G, make_acyclic: bool) -> VecGraph<Vec<G::NodeIx>, ()>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
 {
     let sccs: Vec<Vec<G::NodeIx>> = tarjan_scc(graph).collect();
 
@@ -415,12 +416,12 @@ where
     }
 
     // Insert inter-SCC edges. Endpoints are read from the input graph via the
-    // safe `edge_tail_index` / `edge_head_index` (panic on invalid index).
+    // safe `tail_index` / `head_index` (panic on invalid index).
     let mut seen_edges: HashSet<(usize, usize)> = HashSet::new();
     // SAFETY: edge indices are not exposed to caller
     for eix in super::owned_edge_indices(graph) {
-        let tail = graph.edge_tail_index(eix.clone());
-        let head = graph.edge_head_index(eix);
+        let tail: G::NodeIx = graph.tail_index(&eix).borrow().clone();
+        let head: G::NodeIx = graph.head_index(eix).borrow().clone();
         let scc_tail = node_to_scc[&tail];
         let scc_head = node_to_scc[&head];
 

@@ -5,6 +5,7 @@
 //! macro registers each alias as a single `#[test]` delegating to
 //! [`run_all`].
 
+use std::borrow::Borrow;
 use std::collections::BTreeSet;
 
 use safegraph::graph::capability::{InsertEdge, InsertNode, RemoveNode};
@@ -12,6 +13,16 @@ use safegraph::graph::context::NodeIx as ScopedNIx;
 use safegraph::graph::edge::{Endpoints, Map};
 use safegraph::graph::prelude::*;
 use safegraph::HyperGraph;
+
+/// Clones an index out of a borrowed index handle (`NodeIxRef`/`EdgeIxRef`).
+fn owned<I: Clone, R: Borrow<I>>(r: R) -> I {
+    r.borrow().clone()
+}
+
+/// [`owned`] with the index type inferred from `_like`.
+fn owned_like<I: Clone, R: Borrow<I>>(_like: &I, r: R) -> I {
+    r.borrow().clone()
+}
 
 fn run_all<G>()
 where
@@ -42,38 +53,38 @@ where
             // Counts and individual lookups.
             assert_eq!(ctx.nodes().count(), 4);
             assert_eq!(ctx.edges().count(), 2);
-            assert_eq!(*ctx.node(a.clone()), 10);
-            assert_eq!(*ctx.node(d.clone()), 40);
-            assert_eq!(*ctx.edge(e0.clone()), 100);
-            assert_eq!(*ctx.edge(e1.clone()), 200);
+            assert_eq!(*ctx.node(&a), 10);
+            assert_eq!(*ctx.node(&d), 40);
+            assert_eq!(*ctx.edge(&e0), 100);
+            assert_eq!(*ctx.edge(&e1), 200);
 
             // Endpoints come back as a set: order is not meaningful.
-            let ep0: BTreeSet<_> = ctx.endpoints(e0.clone()).into_iter().collect();
+            let ep0: BTreeSet<_> = ctx.endpoints(&e0).map(|n| owned_like(&a, n)).collect();
             let want_e0: BTreeSet<_> = [a.clone(), b.clone(), c.clone()].into_iter().collect();
             assert_eq!(ep0, want_e0);
-            let ep1: BTreeSet<_> = ctx.endpoints(e1.clone()).into_iter().collect();
+            let ep1: BTreeSet<_> = ctx.endpoints(&e1).map(|n| owned_like(&a, n)).collect();
             let want_e1: BTreeSet<_> = [b.clone(), d.clone()].into_iter().collect();
             assert_eq!(ep1, want_e1);
 
             // `edge_indices_from` lists incident edges (each yielded once).
-            let from_a: BTreeSet<_> = ctx.edge_indices_from(a.clone()).collect();
+            let from_a: BTreeSet<_> = ctx.edge_indices_from(&a).map(owned).collect();
             assert_eq!(from_a, [e0.clone()].into_iter().collect::<BTreeSet<_>>());
-            let from_b: BTreeSet<_> = ctx.edge_indices_from(b.clone()).collect();
+            let from_b: BTreeSet<_> = ctx.edge_indices_from(&b).map(owned).collect();
             assert_eq!(
                 from_b,
                 [e0.clone(), e1.clone()]
                     .into_iter()
                     .collect::<BTreeSet<_>>()
             );
-            let from_d: BTreeSet<_> = ctx.edge_indices_from(d).collect();
+            let from_d: BTreeSet<_> = ctx.edge_indices_from(d).map(owned).collect();
             assert_eq!(from_d, [e1].into_iter().collect::<BTreeSet<_>>());
 
             // `walks_from` yields a hyperedge once per OTHER endpoint, so the
             // 3-edge incident on `a` shows up twice (paired with b and c).
             let walks_a: Vec<_> = ctx
-                .walks_from(a)
+                .walks_from(&a)
                 .map(|w| w.get())
-                .map(|(eix, _, nix)| (eix, nix))
+                .map(|(eix, _, nix)| (owned_like(&e0, eix), owned_like(&a, nix)))
                 .collect();
             assert_eq!(walks_a.len(), 2);
             for (eix, _) in &walks_a {

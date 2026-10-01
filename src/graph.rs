@@ -1,4 +1,5 @@
 use crate::collection::IndexKey;
+use std::borrow::Borrow;
 use std::fmt::Display;
 
 pub mod as_ref;
@@ -82,8 +83,13 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
         // Snapshot indices/endpoints before draining; `drain` consumes
         // `other` and invalidates everything reachable through it.
         let node_indices: Vec<G::NodeIx> = crate::algo::owned_node_indices(&other).collect();
-        let edge_endpoints: Vec<G::Endpoints> = crate::algo::owned_edge_indices(&other)
-            .map(|eix| unsafe { <G as GraphOperation<'_>>::endpoints_unchecked(&other, eix) })
+        let edge_endpoints: Vec<Vec<G::NodeIx>> = <G as GraphOperation<'_>>::edge_indices(&other)
+            .map(|eix| {
+                unsafe { <G as GraphOperation<'_>>::endpoints_unchecked(&other, eix.borrow()) }
+                    .into_iter()
+                    .map(|nix| nix.borrow().clone())
+                    .collect()
+            })
             .collect();
         // UFCS: `other: Graph`, and both `Graph` and `GraphOperation` are in
         // scope here, so plain `.drain()` would be ambiguous.
@@ -320,12 +326,14 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     }
 
     /// Returns `true` if `node_ix` refers to a live node in this graph.
-    fn contains_node_index(&self, node_ix: &Self::NodeIx) -> bool {
+    fn contains_node_index<B: Borrow<Self::NodeIx>>(&self, node_ix: B) -> bool {
+        let node_ix = node_ix.borrow();
         <Self as GraphOperation<'_>>::contains_node_index(self, node_ix)
     }
 
     /// Returns `true` if `edge_ix` refers to a live edge in this graph.
-    fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool {
+    fn contains_edge_index<B: Borrow<Self::EdgeIx>>(&self, edge_ix: B) -> bool {
+        let edge_ix = edge_ix.borrow();
         <Self as GraphOperation<'_>>::contains_edge_index(self, edge_ix)
     }
 
@@ -396,11 +404,12 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     }
 
     /// Returns a reference to the node at `node_ix`. Panics if the index is invalid.
-    fn node(&self, node_ix: Self::NodeIx) -> &Self::Node {
+    fn node<B: Borrow<Self::NodeIx>>(&self, node_ix: B) -> &Self::Node {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
-        unsafe { <Self as GraphOperation<'_>>::node_unchecked(self, &node_ix) }
+        unsafe { <Self as GraphOperation<'_>>::node_unchecked(self, node_ix) }
     }
 
     /// Returns a reference to the node at `node_ix`, without checking validity.
@@ -409,17 +418,18 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn node_unchecked(&self, node_ix: Self::NodeIx) -> &Self::Node {
-        <Self as GraphOperation<'_>>::node_unchecked(self, &node_ix)
+    unsafe fn node_unchecked<B: Borrow<Self::NodeIx>>(&self, node_ix: B) -> &Self::Node {
+        let node_ix = node_ix.borrow();
+        <Self as GraphOperation<'_>>::node_unchecked(self, node_ix)
     }
 
     /// Returns a reference to the edge at `edge_ix`. Panics if the index is invalid.
-    fn edge(&self, edge_ix: Self::EdgeIx) -> &Self::Edge {
+    fn edge<B: Borrow<Self::EdgeIx>>(&self, edge_ix: B) -> &Self::Edge {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
-        unsafe { <Self as GraphOperation<'_>>::edge_unchecked(self, &edge_ix) }
+        unsafe { <Self as GraphOperation<'_>>::edge_unchecked(self, edge_ix) }
     }
 
     /// Returns a reference to the edge at `edge_ix`, without checking validity.
@@ -428,8 +438,9 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_unchecked(&self, edge_ix: Self::EdgeIx) -> &Self::Edge {
-        <Self as GraphOperation<'_>>::edge_unchecked(self, &edge_ix)
+    unsafe fn edge_unchecked<B: Borrow<Self::EdgeIx>>(&self, edge_ix: B) -> &Self::Edge {
+        let edge_ix = edge_ix.borrow();
+        <Self as GraphOperation<'_>>::edge_unchecked(self, edge_ix)
     }
 
     /// Returns an iterator over references to all node data.
@@ -444,53 +455,62 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
 
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn node_unchecked_mut<'a>(&'a mut self, node_ix: Self::NodeIx) -> &'a mut Self::Node
+    unsafe fn node_unchecked_mut<'a, B: Borrow<Self::NodeIx>>(
+        &'a mut self,
+        node_ix: B,
+    ) -> &'a mut Self::Node
     where
-        Self: UpdateNode<'a>,
+        Self: for<'x> UpdateNode<'x>,
     {
-        <Self as UpdateNode<'a>>::node_unchecked_mut(self, node_ix)
+        let node_ix = node_ix.borrow();
+        <Self as UpdateNode<'a>>::node_unchecked_mut(self, node_ix.clone())
     }
 
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_unchecked_mut(&mut self, edge_ix: Self::EdgeIx) -> &mut Self::Edge
+    unsafe fn edge_unchecked_mut<B: Borrow<Self::EdgeIx>>(&mut self, edge_ix: B) -> &mut Self::Edge
     where
         Self: UpdateEdge,
     {
-        <Self as UpdateEdge>::edge_unchecked_mut(self, edge_ix)
+        let edge_ix = edge_ix.borrow();
+        <Self as UpdateEdge>::edge_unchecked_mut(self, edge_ix.clone())
     }
 
     /// Returns a mutable reference to the node at `node_ix`. Panics if the index is invalid.
-    fn node_mut<'r>(&'r mut self, node_ix: Self::NodeIx) -> &'r mut Self::Node
+    fn node_mut<'r, B: Borrow<Self::NodeIx>>(&'r mut self, node_ix: B) -> &'r mut Self::Node
     where
-        Self: UpdateNode<'r>,
+        Self: for<'x> UpdateNode<'x>,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
-        unsafe { <Self as UpdateNode<'r>>::node_unchecked_mut(self, node_ix) }
+        unsafe { <Self as UpdateNode<'r>>::node_unchecked_mut(self, node_ix.clone()) }
     }
 
     /// Returns a mutable reference to the edge at `edge_ix`. Panics if the index is invalid.
-    fn edge_mut(&mut self, edge_ix: Self::EdgeIx) -> &mut Self::Edge
+    fn edge_mut<B: Borrow<Self::EdgeIx>>(&mut self, edge_ix: B) -> &mut Self::Edge
     where
         Self: UpdateEdge,
     {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
-        unsafe { <Self as UpdateEdge>::edge_unchecked_mut(self, edge_ix) }
+        unsafe { <Self as UpdateEdge>::edge_unchecked_mut(self, edge_ix.clone()) }
     }
 
     /// Returns the endpoints of `edge_ix`. Panics if the index is invalid. Requires [`StableNode`].
-    fn endpoints(&self, edge_ix: Self::EdgeIx) -> Self::Endpoints
+    fn endpoints<B: Borrow<Self::EdgeIx>>(
+        &self,
+        edge_ix: B,
+    ) -> <Self as GraphOperation<'_>>::EndpointsRef
     where
         Self: StableNode,
     {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
         // SAFETY: edge index checked above; `StableNode` keeps the result valid.
         unsafe { <Self as GraphOperation<'_>>::endpoints_unchecked(self, edge_ix) }
@@ -503,19 +523,25 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn endpoints_unchecked(&self, edge_ix: Self::EdgeIx) -> Self::Endpoints
+    unsafe fn endpoints_unchecked<B: Borrow<Self::EdgeIx>>(
+        &self,
+        edge_ix: B,
+    ) -> <Self as GraphOperation<'_>>::EndpointsRef
     where
         Self: StableNode,
     {
+        let edge_ix = edge_ix.borrow();
         <Self as GraphOperation<'_>>::endpoints_unchecked(self, edge_ix)
     }
 
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn endpoint_nodes_unchecked(
+    unsafe fn endpoint_nodes_unchecked<B: Borrow<Self::EdgeIx>>(
         &self,
-        edge_ix: Self::EdgeIx,
-    ) -> NodeRefIter<'_, <Self::Endpoints as IntoIterator>::IntoIter, Self> {
+        edge_ix: B,
+    ) -> NodeRefIter<'_, <<Self as GraphOperation<'_>>::EndpointsRef as IntoIterator>::IntoIter, Self>
+    {
+        let edge_ix = edge_ix.borrow();
         NodeRefIter(
             self,
             <Self as GraphOperation<'_>>::endpoints_unchecked(self, edge_ix).into_iter(),
@@ -524,13 +550,14 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
 
     /// Returns an iterator over references to the endpoint nodes of `edge_ix`.
     /// Panics if the index is invalid.
-    fn endpoint_nodes(
+    fn endpoint_nodes<B: Borrow<Self::EdgeIx>>(
         &self,
-        edge_ix: Self::EdgeIx,
-    ) -> NodeRefIter<'_, <Self::Endpoints as IntoIterator>::IntoIter, Self> {
+        edge_ix: B,
+    ) -> NodeRefIter<'_, <<Self as GraphOperation<'_>>::EndpointsRef as IntoIterator>::IntoIter, Self>
+    {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
         // SAFETY: edge index validity is checked above.
         unsafe { self.endpoint_nodes_unchecked(edge_ix) }
@@ -540,18 +567,19 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// For directed graphs, this yields outgoing edges.
     /// For undirected graphs, this yields all connected edges.
-    fn edge_indices_from(
+    fn edge_indices_from<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> <Self as GraphOperation<'_>>::EdgeIndicesFrom
     where
         Self: StableEdge,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; `StableEdge` keeps the result valid.
-        unsafe { <Self as GraphOperation<'_>>::edge_indices_from_unchecked(self, &node_ix) }
+        unsafe { <Self as GraphOperation<'_>>::edge_indices_from_unchecked(self, node_ix) }
     }
 
     /// Returns edge indices from `node_ix`, without checking index validity.
@@ -561,14 +589,15 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn edge_indices_from_unchecked(
+    unsafe fn edge_indices_from_unchecked<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> <Self as GraphOperation<'_>>::EdgeIndicesFrom
     where
         Self: StableEdge,
     {
-        <Self as GraphOperation<'_>>::edge_indices_from_unchecked(self, &node_ix)
+        let node_ix = node_ix.borrow();
+        <Self as GraphOperation<'_>>::edge_indices_from_unchecked(self, node_ix)
     }
 
     /// Returns an iterator over references to edges from `node_ix`,
@@ -576,24 +605,26 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn edges_from_unchecked(
+    unsafe fn edges_from_unchecked<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> EdgeRefIter<'_, <Self as GraphOperation<'_>>::EdgeIndicesFrom, Self> {
+        let node_ix = node_ix.borrow();
         EdgeRefIter(
             self,
-            <Self as GraphOperation<'_>>::edge_indices_from_unchecked(self, &node_ix),
+            <Self as GraphOperation<'_>>::edge_indices_from_unchecked(self, node_ix),
         )
     }
 
     /// Returns an iterator over references to edges starting from `node_ix`.
     /// Panics if the index is invalid.
-    fn edges_from(
+    fn edges_from<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> EdgeRefIter<'_, <Self as GraphOperation<'_>>::EdgeIndicesFrom, Self> {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index validity is checked above.
         unsafe { self.edges_from_unchecked(node_ix) }
@@ -602,12 +633,16 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     /// Returns all edge indices incident to `node_ix`.
     ///
     /// For directed graphs this includes both incoming and outgoing edges.
-    fn edge_indices_of(&self, node_ix: Self::NodeIx) -> <Self as GraphOperation<'_>>::EdgeIndicesOf
+    fn edge_indices_of<B: Borrow<Self::NodeIx>>(
+        &self,
+        node_ix: B,
+    ) -> <Self as GraphOperation<'_>>::EdgeIndicesOf
     where
         Self: StableEdge,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; `StableEdge` keeps the result valid.
         unsafe { <Self as GraphOperation<'_>>::edge_indices_of_unchecked(self, node_ix) }
@@ -620,13 +655,14 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn edge_indices_of_unchecked(
+    unsafe fn edge_indices_of_unchecked<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> <Self as GraphOperation<'_>>::EdgeIndicesOf
     where
         Self: StableEdge,
     {
+        let node_ix = node_ix.borrow();
         <Self as GraphOperation<'_>>::edge_indices_of_unchecked(self, node_ix)
     }
 
@@ -635,10 +671,11 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn edges_of_unchecked(
+    unsafe fn edges_of_unchecked<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> EdgeRefIter<'_, <Self as GraphOperation<'_>>::EdgeIndicesOf, Self> {
+        let node_ix = node_ix.borrow();
         EdgeRefIter(
             self,
             <Self as GraphOperation<'_>>::edge_indices_of_unchecked(self, node_ix),
@@ -647,12 +684,13 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
 
     /// Returns an iterator over references to all edges incident to `node_ix`.
     /// Panics if the index is invalid.
-    fn edges_of(
+    fn edges_of<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> EdgeRefIter<'_, <Self as GraphOperation<'_>>::EdgeIndicesOf, Self> {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index validity is checked above.
         unsafe { self.edges_of_unchecked(node_ix) }
@@ -662,16 +700,17 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn neighbor_indices_from_unchecked(
+    unsafe fn neighbor_indices_from_unchecked<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> NeighborIndices<Self::NodeIx>
     where
         Self: StableNode,
     {
+        let node_ix = node_ix.borrow();
         NeighborIndices {
             iter: <Self as GraphOperation<'_>>::walks_from_unchecked(self, node_ix)
-                .map(|wi| wi.into_parts().2)
+                .map(|wi| wi.into_parts().2.borrow().clone())
                 .collect::<Vec<_>>()
                 .into_iter(),
         }
@@ -681,12 +720,16 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// For directed graphs this follows outgoing edges.
     /// For undirected graphs this returns adjacent nodes.
-    fn neighbor_indices_from(&self, node_ix: Self::NodeIx) -> NeighborIndices<Self::NodeIx>
+    fn neighbor_indices_from<B: Borrow<Self::NodeIx>>(
+        &self,
+        node_ix: B,
+    ) -> NeighborIndices<Self::NodeIx>
     where
         Self: StableNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; `StableNode` keeps the result valid.
         unsafe { self.neighbor_indices_from_unchecked(node_ix) }
@@ -696,27 +739,29 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn neighbors_from_unchecked(
+    unsafe fn neighbors_from_unchecked<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> NodeRefIter<'_, NeighborIndices<Self::NodeIx>, Self>
     where
         Self: StableNode,
     {
+        let node_ix = node_ix.borrow();
         NodeRefIter(self, self.neighbor_indices_from_unchecked(node_ix))
     }
 
     /// Returns an iterator over references to neighbor nodes reachable from `node_ix`.
     /// Panics if the index is invalid. Requires [`StableNode`].
-    fn neighbors_from(
+    fn neighbors_from<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> NodeRefIter<'_, NeighborIndices<Self::NodeIx>, Self>
     where
         Self: StableNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: Self impls StableNode, node_ix checked above.
         unsafe { self.neighbors_from_unchecked(node_ix) }
@@ -726,16 +771,17 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn neighbor_indices_of_unchecked(
+    unsafe fn neighbor_indices_of_unchecked<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> NeighborIndices<Self::NodeIx>
     where
         Self: StableNode,
     {
+        let node_ix = node_ix.borrow();
         NeighborIndices {
             iter: <Self as GraphOperation<'_>>::walks_of_unchecked(self, node_ix)
-                .map(|wi| wi.into_parts().2)
+                .map(|wi| wi.into_parts().2.borrow().clone())
                 .collect::<Vec<_>>()
                 .into_iter(),
         }
@@ -744,12 +790,16 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     /// Returns node indices directly connected with `node_ix`.
     ///
     /// This includes all adjacent nodes regardless of edge direction.
-    fn neighbor_indices_of(&self, node_ix: Self::NodeIx) -> NeighborIndices<Self::NodeIx>
+    fn neighbor_indices_of<B: Borrow<Self::NodeIx>>(
+        &self,
+        node_ix: B,
+    ) -> NeighborIndices<Self::NodeIx>
     where
         Self: StableNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; `StableNode` keeps the result valid.
         unsafe { self.neighbor_indices_of_unchecked(node_ix) }
@@ -760,52 +810,59 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn neighbors_of_unchecked(
+    unsafe fn neighbors_of_unchecked<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> NodeRefIter<'_, NeighborIndices<Self::NodeIx>, Self>
     where
         Self: StableNode,
     {
+        let node_ix = node_ix.borrow();
         // SAFETY: the NodeIx is only used until the Graph is not modified.
         NodeRefIter(self, self.neighbor_indices_of_unchecked(node_ix))
     }
 
     /// Returns an iterator over references to all neighbor nodes of `node_ix`.
     /// Panics if the index is invalid. Requires [`StableNode`].
-    fn neighbors_of(
+    fn neighbors_of<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> NodeRefIter<'_, NeighborIndices<Self::NodeIx>, Self>
     where
         Self: StableNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: checked in precondition
         unsafe { self.neighbors_of_unchecked(node_ix) }
     }
 
     /// Returns (EdgeIx, &Edge, NodeIx) triples for outgoing walks. Requires [`StableEdge`] + [`StableNode`].
-    fn walks_from(&self, node_ix: Self::NodeIx) -> <Self as GraphOperation<'_>>::WalksFrom
+    fn walks_from<B: Borrow<Self::NodeIx>>(
+        &self,
+        node_ix: B,
+    ) -> <Self as GraphOperation<'_>>::WalksFrom
     where
         Self: StableEdge + StableNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; StableEdge + StableNode keep it valid.
         unsafe { <Self as GraphOperation<'_>>::walks_from_unchecked(self, node_ix) }
     }
 
     /// Returns (EdgeIx, &Edge, NodeIx) triples for all incident walks. Requires [`StableEdge`] + [`StableNode`].
-    fn walks_of(&self, node_ix: Self::NodeIx) -> <Self as GraphOperation<'_>>::WalksOf
+    fn walks_of<B: Borrow<Self::NodeIx>>(&self, node_ix: B) -> <Self as GraphOperation<'_>>::WalksOf
     where
         Self: StableEdge + StableNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; StableEdge + StableNode keep it valid.
         unsafe { <Self as GraphOperation<'_>>::walks_of_unchecked(self, node_ix) }
@@ -816,13 +873,14 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn walks_from_unchecked(
+    unsafe fn walks_from_unchecked<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> <Self as GraphOperation<'_>>::WalksFrom
     where
         Self: StableEdge + StableNode,
     {
+        let node_ix = node_ix.borrow();
         <Self as GraphOperation<'_>>::walks_from_unchecked(self, node_ix)
     }
 
@@ -831,13 +889,14 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn walks_of_unchecked(
+    unsafe fn walks_of_unchecked<B: Borrow<Self::NodeIx>>(
         &self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> <Self as GraphOperation<'_>>::WalksOf
     where
         Self: StableEdge + StableNode,
     {
+        let node_ix = node_ix.borrow();
         <Self as GraphOperation<'_>>::walks_of_unchecked(self, node_ix)
     }
 
@@ -845,23 +904,28 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn walks_to_unchecked<'r>(
+    unsafe fn walks_to_unchecked<'r, B: Borrow<Self::NodeIx>>(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> <Self as Directed<'r>>::WalksTo
     where
-        Self: Directed<'r> + StableEdge + StableNode,
+        Self: for<'x> Directed<'x> + StableEdge + StableNode,
     {
+        let node_ix = node_ix.borrow();
         <Self as Directed<'r>>::walks_to_unchecked(self, node_ix)
     }
 
     /// Returns (NodeIx, EdgeIx, &Edge) triples for incoming walks. Requires [`Directed`] + [`StableEdge`] + [`StableNode`].
-    fn walks_to<'r>(&'r self, node_ix: Self::NodeIx) -> <Self as Directed<'r>>::WalksTo
+    fn walks_to<'r, B: Borrow<Self::NodeIx>>(
+        &'r self,
+        node_ix: B,
+    ) -> <Self as Directed<'r>>::WalksTo
     where
-        Self: Directed<'r> + StableEdge + StableNode,
+        Self: for<'x> Directed<'x> + StableEdge + StableNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; StableEdge + StableNode keep it valid.
         unsafe { <Self as Directed<'r>>::walks_to_unchecked(self, node_ix) }
@@ -869,39 +933,42 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
 
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn walks_from_unchecked_mut<'r>(
+    unsafe fn walks_from_unchecked_mut<'r, B: Borrow<Self::NodeIx>>(
         &'r mut self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> <Self as capability::UpdateNode<'r>>::WalksFromMut
     where
-        Self: capability::UpdateNode<'r> + StableEdge + StableNode,
+        Self: for<'x> capability::UpdateNode<'x> + StableEdge + StableNode,
     {
+        let node_ix = node_ix.borrow();
         <Self as capability::UpdateNode<'r>>::walks_from_unchecked_mut(self, node_ix)
     }
 
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn walks_of_unchecked_mut<'r>(
+    unsafe fn walks_of_unchecked_mut<'r, B: Borrow<Self::NodeIx>>(
         &'r mut self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> <Self as capability::UpdateNode<'r>>::WalksOfMut
     where
-        Self: capability::UpdateNode<'r> + StableEdge + StableNode,
+        Self: for<'x> capability::UpdateNode<'x> + StableEdge + StableNode,
     {
+        let node_ix = node_ix.borrow();
         <Self as capability::UpdateNode<'r>>::walks_of_unchecked_mut(self, node_ix)
     }
 
     /// Returns (EdgeIx, &mut Edge, NodeIx) triples for outgoing walks.
     /// Requires [`capability::UpdateNode`] + [`StableEdge`] + [`StableNode`].
-    fn walks_from_mut<'r>(
+    fn walks_from_mut<'r, B: Borrow<Self::NodeIx>>(
         &'r mut self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> <Self as capability::UpdateNode<'r>>::WalksFromMut
     where
-        Self: capability::UpdateNode<'r> + StableEdge + StableNode,
+        Self: for<'x> capability::UpdateNode<'x> + StableEdge + StableNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; StableEdge + StableNode keep it valid.
         unsafe { <Self as capability::UpdateNode<'r>>::walks_from_unchecked_mut(self, node_ix) }
@@ -909,15 +976,16 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
 
     /// Returns (EdgeIx, &mut Edge, NodeIx) triples for all incident walks.
     /// Requires [`capability::UpdateNode`] + [`StableEdge`] + [`StableNode`].
-    fn walks_of_mut<'r>(
+    fn walks_of_mut<'r, B: Borrow<Self::NodeIx>>(
         &'r mut self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> <Self as capability::UpdateNode<'r>>::WalksOfMut
     where
-        Self: capability::UpdateNode<'r> + StableEdge + StableNode,
+        Self: for<'x> capability::UpdateNode<'x> + StableEdge + StableNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; StableEdge + StableNode keep it valid.
         unsafe { <Self as capability::UpdateNode<'r>>::walks_of_unchecked_mut(self, node_ix) }
@@ -927,25 +995,30 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn edge_indices_to_unchecked<'r>(
+    unsafe fn edge_indices_to_unchecked<'r, B: Borrow<Self::NodeIx>>(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> <Self as Directed<'r>>::EdgeIndicesTo
     where
-        Self: Directed<'r> + StableEdge,
+        Self: for<'x> Directed<'x> + StableEdge,
     {
+        let node_ix = node_ix.borrow();
         <Self as Directed<'r>>::edge_indices_to_unchecked(self, node_ix)
     }
 
     /// Returns edge indices incoming to `node_ix`.
     ///
     /// This is available only for directed graphs.
-    fn edge_indices_to<'r>(&'r self, node_ix: Self::NodeIx) -> <Self as Directed<'r>>::EdgeIndicesTo
+    fn edge_indices_to<'r, B: Borrow<Self::NodeIx>>(
+        &'r self,
+        node_ix: B,
+    ) -> <Self as Directed<'r>>::EdgeIndicesTo
     where
-        Self: Directed<'r> + StableEdge,
+        Self: for<'x> Directed<'x> + StableEdge,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; `StableEdge` keeps the result valid.
         unsafe { <Self as Directed<'r>>::edge_indices_to_unchecked(self, node_ix) }
@@ -956,13 +1029,14 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn edges_to_unchecked<'r>(
+    unsafe fn edges_to_unchecked<'r, B: Borrow<Self::NodeIx>>(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> EdgeRefIter<'r, <Self as Directed<'r>>::EdgeIndicesTo, Self>
     where
-        Self: Directed<'r> + StableEdge,
+        Self: for<'x> Directed<'x> + StableEdge,
     {
+        let node_ix = node_ix.borrow();
         EdgeRefIter(
             self,
             <Self as Directed<'r>>::edge_indices_to_unchecked(self, node_ix),
@@ -971,15 +1045,16 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
 
     /// Returns an iterator over references to edges incoming to `node_ix`.
     /// Panics if the index is invalid.
-    fn edges_to<'r>(
+    fn edges_to<'r, B: Borrow<Self::NodeIx>>(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> EdgeRefIter<'r, <Self as Directed<'r>>::EdgeIndicesTo, Self>
     where
-        Self: Directed<'r> + StableEdge,
+        Self: for<'x> Directed<'x> + StableEdge,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; `StableEdge` keeps the result valid.
         unsafe { self.edges_to_unchecked(node_ix) }
@@ -989,16 +1064,17 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn neighbor_indices_to_unchecked<'r>(
+    unsafe fn neighbor_indices_to_unchecked<'r, B: Borrow<Self::NodeIx>>(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> NeighborIndices<Self::NodeIx>
     where
-        Self: Directed<'r> + StableNode,
+        Self: for<'x> Directed<'x> + StableNode,
     {
+        let node_ix = node_ix.borrow();
         NeighborIndices {
             iter: <Self as Directed<'r>>::walks_to_unchecked(self, node_ix)
-                .map(|wi| wi.into_parts().0)
+                .map(|wi| wi.into_parts().0.borrow().clone())
                 .collect::<Vec<_>>()
                 .into_iter(),
         }
@@ -1007,12 +1083,16 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     /// Returns node indices that have an edge into `node_ix`.
     ///
     /// This is available only for directed graphs.
-    fn neighbor_indices_to<'r>(&'r self, node_ix: Self::NodeIx) -> NeighborIndices<Self::NodeIx>
+    fn neighbor_indices_to<'r, B: Borrow<Self::NodeIx>>(
+        &'r self,
+        node_ix: B,
+    ) -> NeighborIndices<Self::NodeIx>
     where
-        Self: Directed<'r> + StableNode,
+        Self: for<'x> Directed<'x> + StableNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: node index checked above; `StableNode` keeps the result valid.
         unsafe { self.neighbor_indices_to_unchecked(node_ix) }
@@ -1022,27 +1102,29 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn neighbors_to_unchecked<'r>(
+    unsafe fn neighbors_to_unchecked<'r, B: Borrow<Self::NodeIx>>(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> NodeRefIter<'r, NeighborIndices<Self::NodeIx>, Self>
     where
-        Self: Directed<'r> + StableNode,
+        Self: for<'x> Directed<'x> + StableNode,
     {
+        let node_ix = node_ix.borrow();
         NodeRefIter(self, self.neighbor_indices_to_unchecked(node_ix))
     }
 
     /// Returns an iterator over references to nodes with an edge into `node_ix`.
     /// Panics if the index is invalid.
-    fn neighbors_to<'r>(
+    fn neighbors_to<'r, B: Borrow<Self::NodeIx>>(
         &'r self,
-        node_ix: Self::NodeIx,
+        node_ix: B,
     ) -> NodeRefIter<'r, NeighborIndices<Self::NodeIx>, Self>
     where
-        Self: Directed<'r> + StableNode,
+        Self: for<'x> Directed<'x> + StableNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         unsafe { self.neighbors_to_unchecked(node_ix) }
     }
@@ -1051,27 +1133,28 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_tail_indices_unchecked<'r>(
+    unsafe fn tail_indices_unchecked<'r, B: Borrow<Self::EdgeIx>>(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: B,
     ) -> <Self as Directed<'r>>::EdgeTailIndices
     where
-        Self: Directed<'r> + StableNode,
+        Self: for<'x> Directed<'x> + StableNode,
     {
+        let edge_ix = edge_ix.borrow();
         <Self as Directed<'r>>::edge_tail_indices_unchecked(self, edge_ix)
     }
 
     /// Returns the source (tail) node indices of `edge_ix`. Requires [`Directed`] + [`StableNode`].
-    fn edge_tail_indices<'r>(
+    fn tail_indices<'r, B: Borrow<Self::EdgeIx>>(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: B,
     ) -> <Self as Directed<'r>>::EdgeTailIndices
     where
-        Self: Directed<'r> + StableNode,
+        Self: for<'x> Directed<'x> + StableNode,
     {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
         // SAFETY: edge index checked above; `StableNode` keeps the result valid.
         unsafe { <Self as Directed<'r>>::edge_tail_indices_unchecked(self, edge_ix) }
@@ -1079,16 +1162,16 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
 
     /// Returns an iterator over references to the source (tail) nodes of `edge_ix`.
     /// Panics if the index is invalid.
-    fn edge_tails<'r>(
+    fn tails<'r, B: Borrow<Self::EdgeIx>>(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: B,
     ) -> NodeRefIter<'r, <Self as Directed<'r>>::EdgeTailIndices, Self>
     where
-        Self: Directed<'r>,
+        Self: for<'x> Directed<'x>,
     {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
         // SAFETY: node indices are consumed immediately while graph is immutably borrowed.
         unsafe {
@@ -1103,27 +1186,28 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_head_indices_unchecked<'r>(
+    unsafe fn head_indices_unchecked<'r, B: Borrow<Self::EdgeIx>>(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: B,
     ) -> <Self as Directed<'r>>::EdgeHeadIndices
     where
-        Self: Directed<'r> + StableNode,
+        Self: for<'x> Directed<'x> + StableNode,
     {
+        let edge_ix = edge_ix.borrow();
         <Self as Directed<'r>>::edge_head_indices_unchecked(self, edge_ix)
     }
 
     /// Returns the target (head) node indices of `edge_ix`. Requires [`Directed`] + [`StableNode`].
-    fn edge_head_indices<'r>(
+    fn head_indices<'r, B: Borrow<Self::EdgeIx>>(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: B,
     ) -> <Self as Directed<'r>>::EdgeHeadIndices
     where
-        Self: Directed<'r> + StableNode,
+        Self: for<'x> Directed<'x> + StableNode,
     {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
         // SAFETY: edge index checked above; `StableNode` keeps the result valid.
         unsafe { <Self as Directed<'r>>::edge_head_indices_unchecked(self, edge_ix) }
@@ -1131,16 +1215,16 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
 
     /// Returns an iterator over references to the target (head) nodes of `edge_ix`.
     /// Panics if the index is invalid.
-    fn edge_heads<'r>(
+    fn heads<'r, B: Borrow<Self::EdgeIx>>(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: B,
     ) -> NodeRefIter<'r, <Self as Directed<'r>>::EdgeHeadIndices, Self>
     where
-        Self: Directed<'r>,
+        Self: for<'x> Directed<'x>,
     {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
         // SAFETY: node indices are consumed immediately while graph is immutably borrowed.
         unsafe {
@@ -1156,13 +1240,14 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_tails_unchecked<'r>(
+    unsafe fn tails_unchecked<'r, B: Borrow<Self::EdgeIx>>(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: B,
     ) -> NodeRefIter<'r, <Self as Directed<'r>>::EdgeTailIndices, Self>
     where
-        Self: Directed<'r>,
+        Self: for<'x> Directed<'x>,
     {
+        let edge_ix = edge_ix.borrow();
         NodeRefIter(
             self,
             <Self as Directed<'r>>::edge_tail_indices_unchecked(self, edge_ix),
@@ -1174,13 +1259,14 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_heads_unchecked<'r>(
+    unsafe fn heads_unchecked<'r, B: Borrow<Self::EdgeIx>>(
         &'r self,
-        edge_ix: Self::EdgeIx,
+        edge_ix: B,
     ) -> NodeRefIter<'r, <Self as Directed<'r>>::EdgeHeadIndices, Self>
     where
-        Self: Directed<'r>,
+        Self: for<'x> Directed<'x>,
     {
+        let edge_ix = edge_ix.borrow();
         NodeRefIter(
             self,
             <Self as Directed<'r>>::edge_head_indices_unchecked(self, edge_ix),
@@ -1193,38 +1279,43 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_tail_index_unchecked<'r>(&'r self, edge_ix: Self::EdgeIx) -> Self::NodeIx
+    unsafe fn tail_index_unchecked<'r, B: Borrow<Self::EdgeIx>>(
+        &'r self,
+        edge_ix: B,
+    ) -> <Self as GraphOperation<'r>>::NodeIxRef
     where
-        Self: Directed<'r> + Bigraph + StableNode,
+        Self: for<'x> Directed<'x> + Bigraph + StableNode,
     {
-        let endpoints = <Self as GraphOperation<'r>>::endpoints_unchecked(self, edge_ix);
-        let [tail, _] = <Self as Bigraph>::endpoints_as_array(endpoints);
-        tail
+        <Self as Directed<'r>>::edge_tail_index_unchecked(self, edge_ix.borrow())
     }
 
     /// Returns the single source (tail) node index of `edge_ix`.
     /// Panics if the index is invalid. Requires [`Directed`] + [`Bigraph`] + [`StableNode`].
-    fn edge_tail_index<'r>(&'r self, edge_ix: Self::EdgeIx) -> Self::NodeIx
+    fn tail_index<'r, B: Borrow<Self::EdgeIx>>(
+        &'r self,
+        edge_ix: B,
+    ) -> <Self as GraphOperation<'r>>::NodeIxRef
     where
-        Self: Directed<'r> + Bigraph + StableNode,
+        Self: for<'x> Directed<'x> + Bigraph + StableNode,
     {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
         // SAFETY: edge index validity is checked above.
-        unsafe { self.edge_tail_index_unchecked(edge_ix) }
+        unsafe { self.tail_index_unchecked(edge_ix) }
     }
 
     /// Returns a reference to the single source (tail) node of `edge_ix`.
     /// Panics if the index is invalid. Requires [`Directed`] + [`Bigraph`] + [`StableNode`].
-    fn edge_tail<'r>(&'r self, edge_ix: Self::EdgeIx) -> &'r Self::Node
+    fn tail<'r, B: Borrow<Self::EdgeIx>>(&'r self, edge_ix: B) -> &'r Self::Node
     where
-        Self: Directed<'r> + Bigraph + StableNode,
+        Self: for<'x> Directed<'x> + Bigraph + StableNode,
     {
-        // SAFETY: `edge_tail_index` is safe and returns a valid node index.
+        let edge_ix = edge_ix.borrow();
+        // SAFETY: `tail_index` is safe and returns a valid node index.
         unsafe {
-            <Self as GraphOperation<'r>>::node_unchecked(self, &self.edge_tail_index(edge_ix))
+            <Self as GraphOperation<'r>>::node_unchecked(self, self.tail_index(edge_ix).borrow())
         }
     }
 
@@ -1234,38 +1325,43 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_head_index_unchecked<'r>(&'r self, edge_ix: Self::EdgeIx) -> Self::NodeIx
+    unsafe fn head_index_unchecked<'r, B: Borrow<Self::EdgeIx>>(
+        &'r self,
+        edge_ix: B,
+    ) -> <Self as GraphOperation<'r>>::NodeIxRef
     where
-        Self: Directed<'r> + Bigraph + StableNode,
+        Self: for<'x> Directed<'x> + Bigraph + StableNode,
     {
-        let endpoints = <Self as GraphOperation<'r>>::endpoints_unchecked(self, edge_ix);
-        let [_, head] = <Self as Bigraph>::endpoints_as_array(endpoints);
-        head
+        <Self as Directed<'r>>::edge_head_index_unchecked(self, edge_ix.borrow())
     }
 
     /// Returns the single target (head) node index of `edge_ix`.
     /// Panics if the index is invalid. Requires [`Directed`] + [`Bigraph`] + [`StableNode`].
-    fn edge_head_index<'r>(&'r self, edge_ix: Self::EdgeIx) -> Self::NodeIx
+    fn head_index<'r, B: Borrow<Self::EdgeIx>>(
+        &'r self,
+        edge_ix: B,
+    ) -> <Self as GraphOperation<'r>>::NodeIxRef
     where
-        Self: Directed<'r> + Bigraph + StableNode,
+        Self: for<'x> Directed<'x> + Bigraph + StableNode,
     {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'r>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
         // SAFETY: edge index validity is checked above.
-        unsafe { self.edge_head_index_unchecked(edge_ix) }
+        unsafe { self.head_index_unchecked(edge_ix) }
     }
 
     /// Returns a reference to the single target (head) node of `edge_ix`.
     /// Panics if the index is invalid. Requires [`Directed`] + [`Bigraph`] + [`StableNode`].
-    fn edge_head<'r>(&'r self, edge_ix: Self::EdgeIx) -> &'r Self::Node
+    fn head<'r, B: Borrow<Self::EdgeIx>>(&'r self, edge_ix: B) -> &'r Self::Node
     where
-        Self: Directed<'r> + Bigraph + StableNode,
+        Self: for<'x> Directed<'x> + Bigraph + StableNode,
     {
-        // SAFETY: `edge_head_index` is safe and returns a valid node index.
+        let edge_ix = edge_ix.borrow();
+        // SAFETY: `head_index` is safe and returns a valid node index.
         unsafe {
-            <Self as GraphOperation<'r>>::node_unchecked(self, &self.edge_head_index(edge_ix))
+            <Self as GraphOperation<'r>>::node_unchecked(self, self.head_index(edge_ix).borrow())
         }
     }
 
@@ -1274,11 +1370,15 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_tail_unchecked<'r>(&'r self, edge_ix: Self::EdgeIx) -> &'r Self::Node
+    unsafe fn tail_unchecked<'r, B: Borrow<Self::EdgeIx>>(&'r self, edge_ix: B) -> &'r Self::Node
     where
-        Self: Directed<'r> + Bigraph + StableNode,
+        Self: for<'x> Directed<'x> + Bigraph + StableNode,
     {
-        <Self as GraphOperation<'r>>::node_unchecked(self, &self.edge_tail_index_unchecked(edge_ix))
+        let edge_ix = edge_ix.borrow();
+        <Self as GraphOperation<'r>>::node_unchecked(
+            self,
+            self.tail_index_unchecked(edge_ix).borrow(),
+        )
     }
 
     /// Returns a reference to the single target (head) node of `edge_ix`,
@@ -1286,11 +1386,15 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_head_unchecked<'r>(&'r self, edge_ix: Self::EdgeIx) -> &'r Self::Node
+    unsafe fn head_unchecked<'r, B: Borrow<Self::EdgeIx>>(&'r self, edge_ix: B) -> &'r Self::Node
     where
-        Self: Directed<'r> + Bigraph + StableNode,
+        Self: for<'x> Directed<'x> + Bigraph + StableNode,
     {
-        <Self as GraphOperation<'r>>::node_unchecked(self, &self.edge_head_index_unchecked(edge_ix))
+        let edge_ix = edge_ix.borrow();
+        <Self as GraphOperation<'r>>::node_unchecked(
+            self,
+            self.head_index_unchecked(edge_ix).borrow(),
+        )
     }
 
     /// Inserts a node and returns its index, skipping the [`StableNode`] bound
@@ -1434,91 +1538,97 @@ pub unsafe trait Graph: for<'r> GraphOperation<'r> {
 
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn remove_node_unchecked(&mut self, node_ix: Self::NodeIx)
+    unsafe fn remove_node_unchecked<B: Borrow<Self::NodeIx>>(&mut self, node_ix: B)
     where
         Self: RemoveNode,
     {
-        <Self as RemoveNode>::remove_node_unchecked(self, node_ix)
+        let node_ix = node_ix.borrow();
+        <Self as RemoveNode>::remove_node_unchecked(self, node_ix.clone())
     }
 
     /// Removes the node at `node_ix` and all its incident edges.
     /// Panics if the index is invalid.
-    fn remove_node(&mut self, node_ix: Self::NodeIx)
+    fn remove_node<B: Borrow<Self::NodeIx>>(&mut self, node_ix: B)
     where
         Self: RemoveNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: checked in precondition
-        unsafe { <Self as RemoveNode>::remove_node_unchecked(self, node_ix) }
+        unsafe { <Self as RemoveNode>::remove_node_unchecked(self, node_ix.clone()) }
     }
 
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn remove_edge_unchecked(&mut self, edge_ix: Self::EdgeIx)
+    unsafe fn remove_edge_unchecked<B: Borrow<Self::EdgeIx>>(&mut self, edge_ix: B)
     where
         Self: RemoveEdge,
     {
-        <Self as RemoveEdge>::remove_edge_unchecked(self, edge_ix);
+        let edge_ix = edge_ix.borrow();
+        <Self as RemoveEdge>::remove_edge_unchecked(self, edge_ix.clone());
     }
 
     /// Removes the edge at `edge_ix`. Panics if the index is invalid.
-    fn remove_edge(&mut self, edge_ix: Self::EdgeIx)
+    fn remove_edge<B: Borrow<Self::EdgeIx>>(&mut self, edge_ix: B)
     where
         Self: RemoveEdge,
     {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
         // SAFETY: checked in precondition
-        unsafe { <Self as RemoveEdge>::remove_edge_unchecked(self, edge_ix) }
+        unsafe { <Self as RemoveEdge>::remove_edge_unchecked(self, edge_ix.clone()) }
     }
 
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn take_node_unchecked(&mut self, node_ix: Self::NodeIx) -> Self::Node
+    unsafe fn take_node_unchecked<B: Borrow<Self::NodeIx>>(&mut self, node_ix: B) -> Self::Node
     where
         Self: RemoveNode,
     {
-        <Self as RemoveNode>::take_node_unchecked(self, node_ix)
+        let node_ix = node_ix.borrow();
+        <Self as RemoveNode>::take_node_unchecked(self, node_ix.clone())
     }
 
     /// Removes the node at `node_ix` and returns its data.
     /// Panics if the index is invalid.
-    fn take_node(&mut self, node_ix: Self::NodeIx) -> Self::Node
+    fn take_node<B: Borrow<Self::NodeIx>>(&mut self, node_ix: B) -> Self::Node
     where
         Self: RemoveNode,
     {
+        let node_ix = node_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_node_index(
-            self, &node_ix
+            self, node_ix
         ));
         // SAFETY: checked above.
-        unsafe { <Self as RemoveNode>::take_node_unchecked(self, node_ix) }
+        unsafe { <Self as RemoveNode>::take_node_unchecked(self, node_ix.clone()) }
     }
 
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn take_edge_unchecked(&mut self, edge_ix: Self::EdgeIx) -> Self::Edge
+    unsafe fn take_edge_unchecked<B: Borrow<Self::EdgeIx>>(&mut self, edge_ix: B) -> Self::Edge
     where
         Self: RemoveEdge,
     {
-        <Self as RemoveEdge>::take_edge_unchecked(self, edge_ix)
+        let edge_ix = edge_ix.borrow();
+        <Self as RemoveEdge>::take_edge_unchecked(self, edge_ix.clone())
     }
 
     /// Removes the edge at `edge_ix` and returns its data.
     /// Panics if the index is invalid.
-    fn take_edge(&mut self, edge_ix: Self::EdgeIx) -> Self::Edge
+    fn take_edge<B: Borrow<Self::EdgeIx>>(&mut self, edge_ix: B) -> Self::Edge
     where
         Self: RemoveEdge,
     {
+        let edge_ix = edge_ix.borrow();
         assert!(<Self as GraphOperation<'_>>::contains_edge_index(
-            self,
-            edge_ix.clone()
+            self, edge_ix
         ));
         // SAFETY: checked above.
-        unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, edge_ix) }
+        unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, edge_ix.clone()) }
     }
 
     /// Removes selected nodes and edges, returning removed payloads.
@@ -1623,7 +1733,7 @@ fn assert_valid_batch<'r, G: GraphOperation<'r> + ?Sized>(
 ) {
     let mut seen_edges = std::collections::HashSet::with_capacity(edge_indices.len());
     for eix in edge_indices {
-        assert!(graph.contains_edge_index(eix.clone()));
+        assert!(graph.contains_edge_index(eix));
         assert!(seen_edges.insert(eix), "duplicate edge index {}", eix);
     }
     let mut seen_nodes = std::collections::HashSet::with_capacity(node_indices.len());

@@ -68,6 +68,7 @@
 //! assert_eq!(flow, 5);
 //! ```
 
+use std::borrow::Borrow;
 use std::collections::{HashMap, VecDeque};
 
 use crate::graph::capability::{Bigraph, Directed, StableEdge, StableNode};
@@ -82,7 +83,7 @@ use crate::graph::Graph;
 /// Only considers edges in the forward direction (source -> ... -> sink).
 pub fn edmonds_karp<'r, G, W, F>(graph: &'r G, source: G::NodeIx, sink: G::NodeIx, capacity: F) -> W
 where
-    G: Graph + Directed<'r> + Bigraph + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + ?Sized,
     W: Copy + Ord + Default + std::ops::Add<Output = W> + std::ops::Sub<Output = W>,
     F: FnMut(&G::Edge) -> W,
 {
@@ -114,7 +115,7 @@ pub fn edmonds_karp_with_flows<'r, G, W, F>(
     capacity: F,
 ) -> (W, HashMap<G::EdgeIx, W>)
 where
-    G: Graph + Directed<'r> + Bigraph + StableEdge + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableEdge + StableNode + ?Sized,
     W: Copy + Ord + Default + std::ops::Add<Output = W> + std::ops::Sub<Output = W>,
     F: FnMut(&G::Edge) -> W,
 {
@@ -152,7 +153,7 @@ pub unsafe fn edmonds_karp_with_flows_unchecked<'r, G, W, F>(
     mut capacity: F,
 ) -> EdmondsKarpFlows<'r, G, W, F, G::NodeIx, G::EdgeIx>
 where
-    G: Graph + Directed<'r> + Bigraph + StableEdge + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableEdge + StableNode + ?Sized,
     W: Copy + Ord + Default + std::ops::Add<Output = W> + std::ops::Sub<Output = W>,
     F: FnMut(&G::Edge) -> W,
 {
@@ -160,7 +161,7 @@ where
     let mut residual: HashMap<G::EdgeIx, W> = HashMap::new();
 
     for eix in super::owned_edge_indices(graph) {
-        let cap = capacity(Graph::edge_unchecked(graph, eix.clone()));
+        let cap = capacity(Graph::edge_unchecked(graph, &eix));
         original_cap.insert(eix.clone(), cap);
         residual.insert(eix, cap);
     }
@@ -180,7 +181,7 @@ where
 
 impl<'r, G, W, F> EdmondsKarpFlows<'r, G, W, F, G::NodeIx, G::EdgeIx>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Default + std::ops::Add<Output = W> + std::ops::Sub<Output = W>,
     F: FnMut(&G::Edge) -> W,
 {
@@ -200,7 +201,7 @@ where
 
 impl<'r, G, W, F> Iterator for EdmondsKarpFlows<'r, G, W, F, G::NodeIx, G::EdgeIx>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Default + std::ops::Add<Output = W> + std::ops::Sub<Output = W>,
     F: FnMut(&G::Edge) -> W,
 {
@@ -259,8 +260,12 @@ where
                     match step {
                         AugmentStep::Forward(eix) => {
                             let eix = eix.clone();
-                            let tail = unsafe { self.graph.edge_tail_index_unchecked(eix.clone()) };
-                            let head = unsafe { self.graph.edge_head_index_unchecked(eix.clone()) };
+                            let tail: G::NodeIx = unsafe { self.graph.tail_index_unchecked(&eix) }
+                                .borrow()
+                                .clone();
+                            let head: G::NodeIx = unsafe { self.graph.head_index_unchecked(&eix) }
+                                .borrow()
+                                .clone();
                             *self.residual.get_mut(&eix).unwrap() =
                                 self.residual[&eix] - bottleneck;
                             let rev = self.reverse_flow.entry((head, tail)).or_default();
@@ -277,11 +282,14 @@ where
                                     self.graph, to,
                                 )
                             } {
-                                let head =
-                                    unsafe { self.graph.edge_head_index_unchecked(eix.clone()) };
+                                let eix: &G::EdgeIx = eix.borrow();
+                                let head: G::NodeIx =
+                                    unsafe { self.graph.head_index_unchecked(eix) }
+                                        .borrow()
+                                        .clone();
                                 if head == *from {
-                                    *self.residual.get_mut(&eix).unwrap() =
-                                        self.residual[&eix] + bottleneck;
+                                    *self.residual.get_mut(eix).unwrap() =
+                                        self.residual[eix] + bottleneck;
                                     break;
                                 }
                             }
@@ -311,7 +319,7 @@ unsafe fn bfs_augmenting_path<'r, G, W>(
     reverse_flow: &HashMap<(G::NodeIx, G::NodeIx), W>,
 ) -> Option<Vec<AugmentStep<G::EdgeIx, G::NodeIx>>>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Default,
 {
     let mut visited: HashMap<G::NodeIx, ResidualParent<G>> = HashMap::new();
@@ -338,18 +346,22 @@ where
         for eix in
             <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, &node)
         {
-            let head = graph.edge_head_index_unchecked(eix.clone());
-            if !source_visited.contains_key(&head) && residual[&eix] > W::default() {
+            let eix: &G::EdgeIx = eix.borrow();
+            let head: G::NodeIx = graph.head_index_unchecked(eix).borrow().clone();
+            if !source_visited.contains_key(&head) && residual[eix] > W::default() {
                 source_visited.insert(head.clone(), true);
-                visited.insert(head.clone(), (node.clone(), AugmentStep::Forward(eix)));
+                visited.insert(
+                    head.clone(),
+                    (node.clone(), AugmentStep::Forward(eix.clone())),
+                );
                 queue.push_back(head);
             }
         }
 
         // Reverse edges: if there's flow from some node `pred` to `node`,
         // we can push flow back
-        for eix in Directed::edge_indices_to_unchecked(graph, node.clone()) {
-            let pred = graph.edge_tail_index_unchecked(eix);
+        for eix in Directed::edge_indices_to_unchecked(graph, &node) {
+            let pred: G::NodeIx = graph.tail_index_unchecked(eix).borrow().clone();
             if pred == node {
                 continue;
             }

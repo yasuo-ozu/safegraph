@@ -74,6 +74,7 @@
 //! assert!(!is_bipartite(&h));
 //! ```
 
+use std::borrow::Borrow;
 use std::collections::{HashMap, VecDeque};
 
 use crate::graph::capability::{Bigraph, StableNode};
@@ -126,15 +127,16 @@ where
             // SAFETY: edge indices are not exposed to the caller and `graph` is
             // borrowed immutably for the whole call (raw bound-free primitive).
             for eix in unsafe {
-                <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(
-                    graph,
-                    node.clone(),
-                )
+                <G as crate::graph::GraphOperation<'_>>::edge_indices_of_unchecked(graph, &node)
             } {
                 let mut found_other = false;
                 for endpoint in unsafe {
-                    <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, eix)
+                    <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
+                        graph,
+                        eix.borrow(),
+                    )
                 } {
+                    let endpoint = endpoint.borrow().clone();
                     if endpoint == node {
                         continue;
                     }

@@ -58,6 +58,7 @@
 //! assert!(post.last() == Some(&0));
 //! ```
 
+use std::borrow::Borrow;
 use std::collections::HashSet;
 
 use crate::graph::capability::StableNode;
@@ -136,10 +137,15 @@ where
             <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(self.graph, &node)
         } {
             for endpoint in unsafe {
-                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix)
+                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
+                    self.graph,
+                    eix.borrow(),
+                )
             } {
-                if endpoint != node && self.visited.insert(endpoint.clone()) {
-                    self.stack.push(endpoint);
+                let endpoint = endpoint.borrow();
+                if *endpoint != node && !self.visited.contains(endpoint) {
+                    self.visited.insert(endpoint.clone());
+                    self.stack.push(endpoint.clone());
                 }
             }
         }
@@ -225,11 +231,15 @@ where
             }
             .flat_map(|eix| {
                 unsafe {
-                    <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, eix)
+                    <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(
+                        self.graph,
+                        eix.borrow(),
+                    )
                 }
                 .into_iter()
             })
-            .filter(|ep| *ep != node)
+            .filter(|ep| *ep.borrow() != node)
+            .map(|ep| ep.borrow().clone())
             .collect();
             // Push in reverse so first successor is on top
             for succ in succs.into_iter().rev() {

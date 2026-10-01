@@ -62,6 +62,7 @@
 //! assert_eq!(dist[&2].0, 1);
 //! ```
 
+use std::borrow::Borrow;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::ops::Add;
 
@@ -122,7 +123,7 @@ pub fn dijkstra<'r, G, W, F>(
     edge_weight: F,
 ) -> HashMap<G::NodeIx, (W, Option<G::NodeIx>)>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default,
     F: FnMut(&G::Edge) -> W,
 {
@@ -141,7 +142,7 @@ pub unsafe fn dijkstra_unchecked<'r, G, W, F>(
     mut edge_weight: F,
 ) -> HashMap<G::NodeIx, (W, Option<G::NodeIx>)>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default,
     F: FnMut(&G::Edge) -> W,
 {
@@ -161,23 +162,23 @@ where
             break;
         }
 
-        for wi in <G as crate::graph::GraphOperation<'_>>::walks_from_unchecked(graph, node.clone())
-        {
+        for wi in <G as crate::graph::GraphOperation<'_>>::walks_from_unchecked(graph, &node) {
             let (_, edge, target) = wi.get();
-            if visited.contains(&target) {
+            let target: &G::NodeIx = target.borrow();
+            if visited.contains(target) {
                 continue;
             }
             let w = edge_weight(edge);
             let new_dist = cost + w;
 
-            let is_shorter = match dist.get(&target) {
+            let is_shorter = match dist.get(target) {
                 Some(&(d, _)) => new_dist < d,
                 None => true,
             };
 
             if is_shorter {
                 dist.insert(target.clone(), (new_dist, Some(node.clone())));
-                heap.push(MinScore(new_dist, target));
+                heap.push(MinScore(new_dist, target.clone()));
             }
         }
     }
@@ -213,7 +214,7 @@ pub fn bellman_ford<'r, G, W, F>(
     edge_weight: F,
 ) -> Result<DistPredMap<G::NodeIx, W>, NegativeCycleError>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default,
     F: FnMut(&G::Edge) -> W,
 {
@@ -236,7 +237,7 @@ pub unsafe fn bellman_ford_unchecked<'r, G, W, F>(
     mut edge_weight: F,
 ) -> BellmanFord<G::NodeIx, W>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default,
     F: FnMut(&G::Edge) -> W,
 {
@@ -247,8 +248,8 @@ where
 
     let edges: Vec<(G::NodeIx, G::NodeIx, W)> = super::owned_edge_indices(graph)
         .map(|eix| {
-            let tail = graph.edge_tail_index_unchecked(eix.clone());
-            let head = graph.edge_head_index_unchecked(eix.clone());
+            let tail: G::NodeIx = graph.tail_index_unchecked(&eix).borrow().clone();
+            let head: G::NodeIx = graph.head_index_unchecked(&eix).borrow().clone();
             let w = edge_weight(Graph::edge_unchecked(graph, eix));
             (tail, head, w)
         })
@@ -359,7 +360,7 @@ pub fn astar<'r, G, W, F, H>(
     heuristic: H,
 ) -> Option<(W, Vec<G::NodeIx>)>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default,
     F: FnMut(&G::Edge) -> W,
     H: FnMut(G::NodeIx) -> W,
@@ -380,7 +381,7 @@ pub unsafe fn astar_unchecked<'r, G, W, F, H>(
     mut heuristic: H,
 ) -> Option<(W, Vec<G::NodeIx>)>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default,
     F: FnMut(&G::Edge) -> W,
     H: FnMut(G::NodeIx) -> W,
@@ -413,16 +414,16 @@ where
 
         let current_g = g_score[&node];
 
-        for wi in <G as crate::graph::GraphOperation<'_>>::walks_from_unchecked(graph, node.clone())
-        {
+        for wi in <G as crate::graph::GraphOperation<'_>>::walks_from_unchecked(graph, &node) {
             let (_, edge, target) = wi.get();
-            if closed.contains(&target) {
+            let target: &G::NodeIx = target.borrow();
+            if closed.contains(target) {
                 continue;
             }
             let w = edge_weight(edge);
             let new_g = current_g + w;
 
-            let is_shorter = match g_score.get(&target) {
+            let is_shorter = match g_score.get(target) {
                 Some(&g) => new_g < g,
                 None => true,
             };
@@ -431,7 +432,7 @@ where
                 g_score.insert(target.clone(), new_g);
                 came_from.insert(target.clone(), node.clone());
                 let f_score = new_g + heuristic(target.clone());
-                heap.push(MinScore(f_score, target));
+                heap.push(MinScore(f_score, target.clone()));
             }
         }
     }
@@ -449,7 +450,7 @@ pub fn floyd_warshall<'r, G, W, F>(
     mut edge_weight: F,
 ) -> Result<PairDistMap<G::NodeIx, W>, NegativeCycleError>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default + Bounded,
     F: FnMut(&G::Edge) -> W,
 {
@@ -471,8 +472,8 @@ where
 
     // Initialize: direct edges
     for eix in super::owned_edge_indices(graph) {
-        let tail = graph.edge_tail_index(eix.clone());
-        let head = graph.edge_head_index(eix.clone());
+        let tail: G::NodeIx = graph.tail_index(&eix).borrow().clone();
+        let head: G::NodeIx = graph.head_index(&eix).borrow().clone();
         let w = edge_weight(graph.edge(eix));
         let entry = dist.entry((tail, head)).or_insert(inf);
         if w < *entry {
@@ -542,7 +543,7 @@ pub fn k_shortest_paths<'r, G, W, F>(
     edge_weight: F,
 ) -> KShortestPaths<'r, G, W, F, G::NodeIx>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default,
     F: FnMut(&G::Edge) -> W,
 {
@@ -562,7 +563,7 @@ pub unsafe fn k_shortest_paths_unchecked<'r, G, W, F>(
     mut edge_weight: F,
 ) -> KShortestPaths<'r, G, W, F, G::NodeIx>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default,
     F: FnMut(&G::Edge) -> W,
 {
@@ -599,7 +600,7 @@ where
 
 impl<'r, G, W, F> KShortestPaths<'r, G, W, F, G::NodeIx>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode,
     W: Copy + Ord + Add<Output = W> + Default,
     F: FnMut(&G::Edge) -> W,
 {
@@ -612,7 +613,7 @@ where
 
 impl<'r, G, W, F> Iterator for KShortestPaths<'r, G, W, F, G::NodeIx>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
     W: Copy + Ord + Add<Output = W> + Default,
     F: FnMut(&G::Edge) -> W,
 {
@@ -657,7 +658,11 @@ where
                             self.graph, &from,
                         )
                     } {
-                        if unsafe { self.graph.edge_head_index_unchecked(eix.clone()) } == to {
+                        let eix: &G::EdgeIx = eix.borrow();
+                        if Borrow::<G::NodeIx>::borrow(&unsafe {
+                            self.graph.head_index_unchecked(eix)
+                        }) == &to
+                        {
                             cost = cost
                                 + (self.edge_weight)(unsafe {
                                     Graph::edge_unchecked(self.graph, eix)
@@ -699,7 +704,10 @@ where
                             self.graph, &node,
                         )
                     } {
-                        let target = unsafe { self.graph.edge_head_index_unchecked(eix.clone()) };
+                        let eix: &G::EdgeIx = eix.borrow();
+                        let target: G::NodeIx = unsafe { self.graph.head_index_unchecked(eix) }
+                            .borrow()
+                            .clone();
                         if visited.contains(&target) || root_nodes.contains(&target) {
                             continue;
                         }

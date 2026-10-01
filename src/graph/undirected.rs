@@ -1,5 +1,3 @@
-use core::borrow::Borrow;
-
 use super::capability::{
     Bigraph, InsertEdge, InsertNode, RemoveEdge, RemoveNode, StableEdge, StableNode, UniqueEdge,
     UniqueNode, UpdateEdge, UpdateNode,
@@ -38,7 +36,7 @@ where
         self.inner.contains_node_index(node_ix)
     }
 
-    fn contains_edge_index(&self, edge_ix: Self::EdgeIx) -> bool {
+    fn contains_edge_index(&self, edge_ix: &Self::EdgeIx) -> bool {
         self.inner.contains_edge_index(edge_ix)
     }
 
@@ -79,7 +77,9 @@ where
         unsafe { self.inner.edge_unchecked(edge_ix) }
     }
 
-    unsafe fn endpoints_unchecked(&self, edge_ix: Self::EdgeIx) -> Self::Endpoints {
+    type EndpointsRef = <G as GraphOperation<'r>>::EndpointsRef;
+
+    unsafe fn endpoints_unchecked(&'r self, edge_ix: &Self::EdgeIx) -> Self::EndpointsRef {
         unsafe { self.inner.endpoints_unchecked(edge_ix) }
     }
 
@@ -89,23 +89,23 @@ where
         &'r self,
         node_ix: &Self::NodeIx,
     ) -> Self::EdgeIndicesFrom {
-        unsafe { self.inner.edge_indices_of_unchecked(node_ix.clone()) }
+        unsafe { self.inner.edge_indices_of_unchecked(node_ix) }
     }
 
     type EdgeIndicesOf = G::EdgeIndicesOf;
 
-    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::EdgeIndicesOf {
+    unsafe fn edge_indices_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::EdgeIndicesOf {
         unsafe { self.inner.edge_indices_of_unchecked(node_ix) }
     }
 
     type WalksFrom = G::WalksOf;
     type WalksOf = G::WalksOf;
 
-    unsafe fn walks_from_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksFrom {
+    unsafe fn walks_from_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksFrom {
         self.inner.walks_of_unchecked(node_ix)
     }
 
-    unsafe fn walks_of_unchecked(&'r self, node_ix: Self::NodeIx) -> Self::WalksOf {
+    unsafe fn walks_of_unchecked(&'r self, node_ix: &Self::NodeIx) -> Self::WalksOf {
         self.inner.walks_of_unchecked(node_ix)
     }
 
@@ -168,7 +168,7 @@ impl<G: InsertEdge> InsertEdge for Undirected<G> {
 
 impl<'r, G> UpdateNode<'r> for Undirected<G>
 where
-    G: UpdateNode<'r>,
+    G: UpdateNode<'r> + 'r,
     G::Edge: 'r,
 {
     unsafe fn node_unchecked_mut(&mut self, node_ix: Self::NodeIx) -> &mut Self::Node {
@@ -176,12 +176,12 @@ where
     }
 
     type WalksFromMut = <G as UpdateNode<'r>>::WalksOfMut;
-    unsafe fn walks_from_unchecked_mut(&'r mut self, node_ix: Self::NodeIx) -> Self::WalksFromMut {
+    unsafe fn walks_from_unchecked_mut(&'r mut self, node_ix: &Self::NodeIx) -> Self::WalksFromMut {
         unsafe { <G as UpdateNode<'r>>::walks_of_unchecked_mut(&mut self.inner, node_ix) }
     }
 
     type WalksOfMut = <G as UpdateNode<'r>>::WalksOfMut;
-    unsafe fn walks_of_unchecked_mut(&'r mut self, node_ix: Self::NodeIx) -> Self::WalksOfMut {
+    unsafe fn walks_of_unchecked_mut(&'r mut self, node_ix: &Self::NodeIx) -> Self::WalksOfMut {
         unsafe { <G as UpdateNode<'r>>::walks_of_unchecked_mut(&mut self.inner, node_ix) }
     }
 }
@@ -196,7 +196,7 @@ impl<G> UniqueNode for Undirected<G>
 where
     G: UniqueNode + for<'r> GraphOperation<'r>,
 {
-    fn node_index(&self, node: impl Borrow<Self::Node>) -> Option<Self::NodeIx> {
+    fn node_index(&self, node: &Self::Node) -> Option<Self::NodeIx> {
         <G as UniqueNode>::node_index(&self.inner, node)
     }
 }
@@ -205,7 +205,7 @@ impl<G> UniqueEdge for Undirected<G>
 where
     G: UniqueEdge + for<'r> GraphOperation<'r>,
 {
-    fn edge_index(&self, edge: impl Borrow<Self::Edge>) -> Option<Self::EdgeIx> {
+    fn edge_index(&self, edge: &Self::Edge) -> Option<Self::EdgeIx> {
         <G as UniqueEdge>::edge_index(&self.inner, edge)
     }
 }

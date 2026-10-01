@@ -41,6 +41,16 @@ use safegraph::VecGraph;
 // `Context` produced by `scope_mut` or `scope`).
 // ---------------------------------------------------------------------------
 
+/// Clones an index out of a borrowed index handle (`NodeIxRef`/`EdgeIxRef`).
+fn owned<I: Clone, R: Borrow<I>>(r: R) -> I {
+    r.borrow().clone()
+}
+
+/// [`owned`] for a node index of `graph`, with the index type inferred from it.
+fn owned_node<C: GraphProperty + ?Sized, R: Borrow<C::NodeIx>>(_graph: &C, r: R) -> C::NodeIx {
+    r.borrow().clone()
+}
+
 fn check_read_only<C>(ctx: &C, n: [C::NodeIx; 3], e: [C::EdgeIx; 2])
 where
     C: Graph + StableNode + StableEdge,
@@ -65,36 +75,36 @@ where
     assert_eq!(edge_values, vec![100, 200]);
 
     // -- direct lookup
-    assert_eq!(*ctx.node(a.clone()), 10);
-    assert_eq!(*ctx.node(b.clone()), 20);
-    assert_eq!(*ctx.node(c.clone()), 30);
-    assert_eq!(*ctx.edge(e0.clone()), 100);
-    assert_eq!(*ctx.edge(e1.clone()), 200);
+    assert_eq!(*ctx.node(&a), 10);
+    assert_eq!(*ctx.node(&b), 20);
+    assert_eq!(*ctx.node(&c), 30);
+    assert_eq!(*ctx.edge(&e0), 100);
+    assert_eq!(*ctx.edge(&e1), 200);
 
     // -- endpoints + endpoint_nodes
-    let ep0: Vec<_> = ctx.endpoints(e0.clone()).into_iter().collect();
+    let ep0: Vec<C::NodeIx> = ctx.endpoints(&e0).into_iter().map(owned).collect();
     assert_eq!(ep0, vec![a.clone(), b.clone()]);
-    let ep0_nodes: Vec<u32> = ctx.endpoint_nodes(e0.clone()).copied().collect();
+    let ep0_nodes: Vec<u32> = ctx.endpoint_nodes(&e0).copied().collect();
     assert_eq!(ep0_nodes, vec![10, 20]);
 
     // -- Bigraph endpoint indices / nodes
-    assert_eq!(ctx.edge_tail_index(e0.clone()), a);
-    assert_eq!(ctx.edge_head_index(e0.clone()), b);
-    assert_eq!(*ctx.edge_tail(e0.clone()), 10);
-    assert_eq!(*ctx.edge_head(e0.clone()), 20);
+    assert_eq!(owned::<C::NodeIx, _>(ctx.tail_index(&e0)), a);
+    assert_eq!(owned::<C::NodeIx, _>(ctx.head_index(&e0)), b);
+    assert_eq!(*ctx.tail(&e0), 10);
+    assert_eq!(*ctx.head(&e0), 20);
 
     // -- outgoing chain (edge indices, edge refs, walks)
-    let from_a_eix: Vec<_> = ctx.edge_indices_from(a.clone()).collect();
+    let from_a_eix: Vec<C::EdgeIx> = ctx.edge_indices_from(&a).map(owned).collect();
     assert_eq!(from_a_eix, vec![e0.clone()]);
-    let from_a_edges: Vec<u32> = ctx.edges_from(a.clone()).copied().collect();
+    let from_a_edges: Vec<u32> = ctx.edges_from(&a).copied().collect();
     assert_eq!(from_a_edges, vec![100]);
     let walks_a: Vec<_> = ctx
-        .walks_from(a.clone())
+        .walks_from(&a)
         .map(|w| w.get())
-        .map(|(eix, _, nix)| (eix, nix))
+        .map(|(eix, _, nix)| (owned::<C::EdgeIx, _>(eix), owned::<C::NodeIx, _>(nix)))
         .collect();
     assert_eq!(walks_a, vec![(e0.clone(), b.clone())]);
-    let from_c: Vec<_> = ctx.edge_indices_from(c.clone()).collect();
+    let from_c: Vec<_> = ctx.edge_indices_from(&c).collect();
     assert!(
         from_c.is_empty(),
         "expected no outgoing from c: {:?}",
@@ -102,54 +112,54 @@ where
     );
 
     // -- incoming chain
-    let to_c_eix: Vec<_> = ctx.edge_indices_to(c.clone()).collect();
+    let to_c_eix: Vec<C::EdgeIx> = ctx.edge_indices_to(&c).map(owned).collect();
     assert_eq!(to_c_eix, vec![e1.clone()]);
-    let to_c_edges: Vec<u32> = ctx.edges_to(c.clone()).copied().collect();
+    let to_c_edges: Vec<u32> = ctx.edges_to(&c).copied().collect();
     assert_eq!(to_c_edges, vec![200]);
     let walks_c: Vec<_> = ctx
-        .walks_to(c.clone())
+        .walks_to(&c)
         .map(|w| w.get())
-        .map(|(src, eix, _)| (src, eix))
+        .map(|(src, eix, _)| (owned::<C::NodeIx, _>(src), owned::<C::EdgeIx, _>(eix)))
         .collect();
     assert_eq!(walks_c, vec![(b.clone(), e1.clone())]);
-    let to_a: Vec<_> = ctx.edge_indices_to(a.clone()).collect();
+    let to_a: Vec<_> = ctx.edge_indices_to(&a).collect();
     assert!(to_a.is_empty(), "expected no incoming to a: {:?}", to_a);
 
     // -- all incident edges of a middle node
-    let mut incident_eix: Vec<_> = ctx.edge_indices_of(b.clone()).collect();
+    let mut incident_eix: Vec<C::EdgeIx> = ctx.edge_indices_of(&b).map(owned).collect();
     incident_eix.sort();
     let mut expected_eix = vec![e0.clone(), e1];
     expected_eix.sort();
     assert_eq!(incident_eix, expected_eix);
-    let mut incident_edges: Vec<u32> = ctx.edges_of(b.clone()).copied().collect();
+    let mut incident_edges: Vec<u32> = ctx.edges_of(&b).copied().collect();
     incident_edges.sort();
     assert_eq!(incident_edges, vec![100, 200]);
 
     // -- tail/head iterators
-    let tails: Vec<_> = ctx.edge_tail_indices(e0.clone()).collect();
-    let heads: Vec<_> = ctx.edge_head_indices(e0.clone()).collect();
+    let tails: Vec<_> = ctx.tail_indices(&e0).collect();
+    let heads: Vec<_> = ctx.head_indices(&e0).collect();
     assert_eq!(tails, vec![a.clone()]);
     assert_eq!(heads, vec![b.clone()]);
-    let tail_nodes: Vec<u32> = ctx.edge_tails(e0.clone()).copied().collect();
-    let head_nodes: Vec<u32> = ctx.edge_heads(e0.clone()).copied().collect();
+    let tail_nodes: Vec<u32> = ctx.tails(&e0).copied().collect();
+    let head_nodes: Vec<u32> = ctx.heads(&e0).copied().collect();
     assert_eq!(tail_nodes, vec![10]);
     assert_eq!(head_nodes, vec![20]);
 
     // -- neighbor iterators (indices + refs, in all three directions)
-    let neigh_from_a: Vec<_> = ctx.neighbor_indices_from(a.clone()).collect();
+    let neigh_from_a: Vec<_> = ctx.neighbor_indices_from(&a).collect();
     assert_eq!(neigh_from_a, vec![b.clone()]);
-    let neigh_to_c: Vec<_> = ctx.neighbor_indices_to(c.clone()).collect();
+    let neigh_to_c: Vec<_> = ctx.neighbor_indices_to(&c).collect();
     assert_eq!(neigh_to_c, vec![b.clone()]);
-    let mut neigh_of_b: Vec<_> = ctx.neighbor_indices_of(b.clone()).collect();
+    let mut neigh_of_b: Vec<_> = ctx.neighbor_indices_of(&b).collect();
     neigh_of_b.sort();
     let mut expected_of_b = vec![a.clone(), c.clone()];
     expected_of_b.sort();
     assert_eq!(neigh_of_b, expected_of_b);
-    let neigh_from_a_nodes: Vec<u32> = ctx.neighbors_from(a.clone()).copied().collect();
+    let neigh_from_a_nodes: Vec<u32> = ctx.neighbors_from(&a).copied().collect();
     assert_eq!(neigh_from_a_nodes, vec![20]);
     let neigh_to_c_nodes: Vec<u32> = ctx.neighbors_to(c).copied().collect();
     assert_eq!(neigh_to_c_nodes, vec![20]);
-    let mut neigh_of_b_nodes: Vec<u32> = ctx.neighbors_of(b.clone()).copied().collect();
+    let mut neigh_of_b_nodes: Vec<u32> = ctx.neighbors_of(&b).copied().collect();
     neigh_of_b_nodes.sort();
     assert_eq!(neigh_of_b_nodes, vec![10, 30]);
 
@@ -398,19 +408,20 @@ where
         );
         *ctx.node_mut(b.clone()) = 999;
         *ctx.edge_mut(e0.clone()) = 555;
-        assert_eq!(*ctx.node(b.clone()), 999);
+        assert_eq!(*ctx.node(&b), 999);
         assert_eq!(*ctx.edge(e0), 555);
         // `walks_from_mut` / `walks_of_mut` currently yield empty iterators on
         // every raw_graph backend (the mutable walk machinery is a TODO).
         // Verify the methods exist, can be called, and don't yield anything.
-        let walks_from: Vec<_> = ctx.walks_from_mut(a).map(|w| w.into_parts().0).collect();
-        assert!(
-            walks_from.is_empty(),
+        // (Counted rather than collected: the items borrow `ctx` mutably.)
+        assert_eq!(
+            ctx.walks_from_mut(a).count(),
+            0,
             "walks_from_mut is unimplemented (yields empty)"
         );
-        let walks_of: Vec<_> = ctx.walks_of_mut(b).map(|w| w.into_parts().0).collect();
-        assert!(
-            walks_of.is_empty(),
+        assert_eq!(
+            ctx.walks_of_mut(b).count(),
+            0,
             "walks_of_mut is unimplemented (yields empty)"
         );
     });
@@ -440,10 +451,10 @@ where
             a {10u32} -- e0 {100u32} --> b {20u32} -- _e1 {200u32} --> _c {30u32}
         );
         // node_index / edge_index look up by value.
-        assert_eq!(ctx.node_index(10u32), Some(a.clone()));
-        assert_eq!(ctx.node_index(999u32), None);
-        assert_eq!(ctx.edge_index(100u32), Some(e0.clone()));
-        assert_eq!(ctx.edge_index(999u32), None);
+        assert_eq!(ctx.node_index(&10u32), Some(a.clone()));
+        assert_eq!(ctx.node_index(&999u32), None);
+        assert_eq!(ctx.edge_index(&100u32), Some(e0.clone()));
+        assert_eq!(ctx.edge_index(&999u32), None);
 
         // get_or_insert_node returns the existing index when present.
         let existing = ctx.get_or_insert_node(10u32);
@@ -451,8 +462,7 @@ where
         let fresh = ctx.get_or_insert_node(40u32);
         assert_eq!(*ctx.node(fresh), 40);
         // get_or_insert_edge has the same semantics.
-        let ep_e0 = ctx.endpoints(e0.clone());
-        let existing_e = ctx.get_or_insert_edge(100u32, ep_e0);
+        let existing_e = ctx.get_or_insert_edge(100u32, [a.clone(), b.clone()]);
         assert_eq!(existing_e, e0);
     });
 }
@@ -639,9 +649,12 @@ where
         for e in
             unsafe { safegraph::graph::GraphOperation::edge_indices_from_unchecked(g, n.borrow()) }
         {
-            let [from, to] =
-                unsafe { safegraph::graph::GraphOperation::endpoints_unchecked(g, e.clone()) };
-            let val = *unsafe { safegraph::graph::GraphOperation::edge_unchecked(g, &e) };
+            let e: &G::EdgeIx = e.borrow();
+            let mut ends = unsafe { safegraph::graph::GraphOperation::endpoints_unchecked(g, e) }
+                .into_iter()
+                .map(owned::<u32, _>);
+            let (from, to) = (ends.next().unwrap(), ends.next().unwrap());
+            let val = *unsafe { safegraph::graph::GraphOperation::edge_unchecked(g, e) };
             out.push((from, to, val));
         }
     }
@@ -692,8 +705,8 @@ fn stabilize_vec_backed() {
     assert_eq!(g.edges().count(), 2);
     assert_eq!(*g.node(a), 10);
     assert_eq!(*g.edge(e0), 100);
-    assert_eq!(g.endpoints(e0), [a, b]);
-    assert_eq!(g.endpoints(e1), [b, c]);
+    assert_eq!(g.endpoints(e0).collect::<Vec<_>>(), [a, b]);
+    assert_eq!(g.endpoints(e1).collect::<Vec<_>>(), [b, c]);
 
     // remove_edge (singular, from the Graph trait — Stabilized exposes it).
     g.remove_edge(e0);
@@ -738,7 +751,8 @@ struct ComplexIndices<S: GraphProperty> {
 fn edge_values<S, I>(g: &S, eixs: I) -> BTreeSet<u32>
 where
     S: Graph + StableNode + StableEdge + GraphProperty<Edge = u32>,
-    I: IntoIterator<Item = S::EdgeIx>,
+    I: IntoIterator,
+    I::Item: Borrow<S::EdgeIx>,
 {
     eixs.into_iter().map(|eix| *g.edge(eix)).collect()
 }
@@ -750,43 +764,40 @@ where
     S::EdgeIx: Ord,
 {
     // Outgoing edges of `a`: the self-loop, both parallel a->b edges, and a->c.
-    let from_a = edge_values(g, g.edge_indices_from(ix.a.clone()));
+    let from_a = edge_values(g, g.edge_indices_from(&ix.a));
     assert_eq!(
         from_a,
         BTreeSet::from([10, 20, 30, 50]),
         "directed edge_indices_from(a)"
     );
-    let from_b = edge_values(g, g.edge_indices_from(ix.b.clone()));
+    let from_b = edge_values(g, g.edge_indices_from(&ix.b));
     assert_eq!(
         from_b,
         BTreeSet::from([40]),
         "directed edge_indices_from(b)"
     );
-    let from_c = edge_values(g, g.edge_indices_from(ix.c.clone()));
+    let from_c = edge_values(g, g.edge_indices_from(&ix.c));
     assert!(from_c.is_empty(), "directed edge_indices_from(c)");
 
     // Incoming edges (Directed::edge_indices_to).
-    let to_a = edge_values(g, g.edge_indices_to(ix.a.clone()));
+    let to_a = edge_values(g, g.edge_indices_to(&ix.a));
     assert_eq!(
         to_a,
         BTreeSet::from([10, 40]),
         "directed edge_indices_to(a): self-loop + reverse"
     );
-    let to_b = edge_values(g, g.edge_indices_to(ix.b.clone()));
+    let to_b = edge_values(g, g.edge_indices_to(&ix.b));
     assert_eq!(
         to_b,
         BTreeSet::from([20, 30]),
         "directed edge_indices_to(b): both parallel edges"
     );
-    let to_c = edge_values(g, g.edge_indices_to(ix.c.clone()));
+    let to_c = edge_values(g, g.edge_indices_to(&ix.c));
     assert_eq!(to_c, BTreeSet::from([50]));
 
     // edge_indices_of: every incident edge, self-loop yielded exactly once.
     // Use a Vec (not a set) so we can verify the self-loop isn't double-counted.
-    let of_a_vec: Vec<u32> = g
-        .edge_indices_of(ix.a.clone())
-        .map(|eix| *g.edge(eix))
-        .collect();
+    let of_a_vec: Vec<u32> = g.edge_indices_of(&ix.a).map(|eix| *g.edge(eix)).collect();
     let mut of_a_sorted = of_a_vec.clone();
     of_a_sorted.sort();
     assert_eq!(
@@ -794,9 +805,9 @@ where
         vec![10, 20, 30, 40, 50],
         "directed edge_indices_of(a): self-loop yielded once"
     );
-    let of_b = edge_values(g, g.edge_indices_of(ix.b.clone()));
+    let of_b = edge_values(g, g.edge_indices_of(&ix.b));
     assert_eq!(of_b, BTreeSet::from([20, 30, 40]));
-    let of_c = edge_values(g, g.edge_indices_of(ix.c.clone()));
+    let of_c = edge_values(g, g.edge_indices_of(&ix.c));
     assert_eq!(of_c, BTreeSet::from([50]));
 }
 
@@ -810,7 +821,7 @@ where
     // Self-loops appear once, both parallel edges show up regardless of
     // direction.
     let from_a_vec: Vec<u32> = und
-        .edge_indices_from(ix.a.clone())
+        .edge_indices_from(&ix.a)
         .map(|eix| *und.edge(eix))
         .collect();
     let mut from_a_sorted = from_a_vec.clone();
@@ -820,18 +831,18 @@ where
         vec![10, 20, 30, 40, 50],
         "undirected edge_indices_from(a)"
     );
-    let from_b = edge_values(und, und.edge_indices_from(ix.b.clone()));
+    let from_b = edge_values(und, und.edge_indices_from(&ix.b));
     assert_eq!(from_b, BTreeSet::from([20, 30, 40]));
-    let from_c = edge_values(und, und.edge_indices_from(ix.c.clone()));
+    let from_c = edge_values(und, und.edge_indices_from(&ix.c));
     assert_eq!(from_c, BTreeSet::from([50]));
 
     // `edge_indices_of` and `edge_indices_from` should agree on the undirected
     // view (the wrapper aliases them).
-    let of_a = edge_values(und, und.edge_indices_of(ix.a.clone()));
+    let of_a = edge_values(und, und.edge_indices_of(&ix.a));
     assert_eq!(of_a, BTreeSet::from([10, 20, 30, 40, 50]));
-    let of_b = edge_values(und, und.edge_indices_of(ix.b.clone()));
+    let of_b = edge_values(und, und.edge_indices_of(&ix.b));
     assert_eq!(of_b, BTreeSet::from([20, 30, 40]));
-    let of_c = edge_values(und, und.edge_indices_of(ix.c.clone()));
+    let of_c = edge_values(und, und.edge_indices_of(&ix.c));
     assert_eq!(of_c, BTreeSet::from([50]));
 }
 
@@ -1077,7 +1088,7 @@ fn snapshot(g: &VecGraph<u32, u32>) -> (Vec<u32>, Vec<(u32, [u32; 2])>) {
         let mut edges: Vec<(u32, [u32; 2])> = ctx
             .edge_indices()
             .map(|eix| {
-                let ep: Vec<_> = ctx.endpoints(eix).into_iter().collect();
+                let ep: Vec<_> = ctx.endpoints(eix).collect();
                 let tail = *ctx.node(ep[0]);
                 let head = *ctx.node(ep[1]);
                 (*ctx.edge(eix), [tail, head])
@@ -1131,6 +1142,7 @@ fn linked_adj_edge_swap_remove_edges_one_at_a_time() {
             let eix = ctx
                 .edge_indices()
                 .find(|&eix| *ctx.edge(eix) == target)
+                .map(owned)
                 .expect("edge with target value");
             ctx.remove_nodes_edges(None, Some(eix));
         });
@@ -1189,7 +1201,7 @@ fn linked_adj_edge_swap_remove_drains_in_sequence() {
     for expected_remaining in (0..5usize).rev() {
         g.scope_mut(|ctx| {
             // Pop the lowest-indexed edge (arbitrary but deterministic).
-            let eix = Graph::edge_indices(&*ctx).next().unwrap();
+            let eix = Graph::edge_indices(&*ctx).next().map(owned).unwrap();
             ctx.remove_nodes_edges(None, Some(eix));
         });
         let (n, e) = g.scope(|ctx| (ctx.nodes().count(), ctx.edges().count()));
@@ -1320,6 +1332,7 @@ where
                 .map(|&v| {
                     Graph::node_indices(&*ctx)
                         .find(|nix| *ctx.node(nix.clone()) == v)
+                        .map(owned)
                         .expect("victim node present")
                 })
                 .collect();
@@ -1328,6 +1341,7 @@ where
                 .map(|&v| {
                     Graph::edge_indices(&*ctx)
                         .find(|eix| *ctx.edge(eix.clone()) == v)
+                        .map(owned)
                         .expect("victim edge present")
                 })
                 .collect();
@@ -1362,7 +1376,7 @@ where
             let mut got_edges: Vec<(u32, u32, u32)> = ctx
                 .edge_indices()
                 .map(|eix| {
-                    let ep: Vec<_> = ctx.endpoints(eix.clone()).into_iter().collect();
+                    let ep: Vec<_> = ctx.endpoints(eix.clone()).collect();
                     (
                         *ctx.edge(eix),
                         *ctx.node(ep[0].clone()),
@@ -1447,6 +1461,7 @@ where
                     .map(|&v| {
                         Graph::node_indices(&*ctx)
                             .find(|nix| *ctx.node(nix.clone()) == v)
+                            .map(|nix| owned_node(&*ctx, nix))
                             .expect("survivor present")
                     })
                     .collect();
@@ -1535,7 +1550,7 @@ where
         let edges: Vec<(u32, u32, u32)> = ctx
             .edge_indices()
             .map(|eix| {
-                let ep: Vec<_> = ctx.endpoints(eix.clone()).into_iter().collect();
+                let ep: Vec<_> = ctx.endpoints(eix.clone()).collect();
                 (
                     *ctx.edge(eix),
                     *ctx.node(ep[0].clone()),

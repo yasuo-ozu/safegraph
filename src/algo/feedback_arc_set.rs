@@ -55,6 +55,7 @@
 //! assert_eq!(fas.len(), 1);
 //! ```
 
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::graph::capability::{Bigraph, Directed, StableEdge, StableNode};
@@ -79,7 +80,7 @@ pub fn greedy_feedback_arc_set<'r, G>(
     graph: &'r G,
 ) -> GreedyFeedbackArcSet<'r, G, super::OwnedEdgeIndices<'r, G>, G::NodeIx>
 where
-    G: Graph + Directed<'r> + Bigraph + StableEdge + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableEdge + StableNode + ?Sized,
 {
     // Eades-Lin-Smyth heuristic:
     // 1. Build a linear ordering of nodes (eagerly)
@@ -102,8 +103,8 @@ where
         }
 
         for eix in super::owned_edge_indices(graph) {
-            let tail = unsafe { graph.edge_tail_index_unchecked(eix.clone()) };
-            let head = unsafe { graph.edge_head_index_unchecked(eix) };
+            let tail: G::NodeIx = unsafe { graph.tail_index_unchecked(&eix) }.borrow().clone();
+            let head: G::NodeIx = unsafe { graph.head_index_unchecked(eix) }.borrow().clone();
             if tail != head {
                 *out_deg.get_mut(&tail).unwrap() += 1;
                 *in_deg.get_mut(&head).unwrap() += 1;
@@ -128,10 +129,10 @@ where
                 for sink in sinks {
                     remaining.remove(&sink);
                     right.push_front(sink.clone());
-                    for pred_eix in
-                        unsafe { Directed::edge_indices_to_unchecked(graph, sink.clone()) }
-                    {
-                        let pred = unsafe { graph.edge_tail_index_unchecked(pred_eix) };
+                    for pred_eix in unsafe { Directed::edge_indices_to_unchecked(graph, &sink) } {
+                        let pred: G::NodeIx = unsafe { graph.tail_index_unchecked(pred_eix) }
+                            .borrow()
+                            .clone();
                         if remaining.contains(&pred) && pred != sink {
                             *cur_out.get_mut(&pred).unwrap() -= 1;
                         }
@@ -152,7 +153,9 @@ where
                             graph, &source,
                         )
                     } {
-                        let succ = unsafe { graph.edge_head_index_unchecked(succ_eix) };
+                        let succ: G::NodeIx = unsafe { graph.head_index_unchecked(succ_eix) }
+                            .borrow()
+                            .clone();
                         if remaining.contains(&succ) && succ != source {
                             *cur_in.get_mut(&succ).unwrap() -= 1;
                         }
@@ -177,13 +180,17 @@ where
             for succ_eix in unsafe {
                 <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(graph, &best)
             } {
-                let succ = unsafe { graph.edge_head_index_unchecked(succ_eix) };
+                let succ: G::NodeIx = unsafe { graph.head_index_unchecked(succ_eix) }
+                    .borrow()
+                    .clone();
                 if remaining.contains(&succ) && succ != best {
                     *cur_in.get_mut(&succ).unwrap() -= 1;
                 }
             }
-            for pred_eix in unsafe { Directed::edge_indices_to_unchecked(graph, best.clone()) } {
-                let pred = unsafe { graph.edge_tail_index_unchecked(pred_eix) };
+            for pred_eix in unsafe { Directed::edge_indices_to_unchecked(graph, &best) } {
+                let pred: G::NodeIx = unsafe { graph.tail_index_unchecked(pred_eix) }
+                    .borrow()
+                    .clone();
                 if remaining.contains(&pred) && pred != best {
                     *cur_out.get_mut(&pred).unwrap() -= 1;
                 }
@@ -213,15 +220,19 @@ where
 
 impl<'r, G> Iterator for GreedyFeedbackArcSet<'r, G, super::OwnedEdgeIndices<'r, G>, G::NodeIx>
 where
-    G: Graph + Directed<'r> + Bigraph + StableNode + ?Sized,
+    G: Graph + for<'x> Directed<'x> + Bigraph + StableNode + ?Sized,
 {
     type Item = G::EdgeIx;
 
     fn next(&mut self) -> Option<G::EdgeIx> {
         loop {
             let eix = self.edges.next()?;
-            let tail = unsafe { self.graph.edge_tail_index_unchecked(eix.clone()) };
-            let head = unsafe { self.graph.edge_head_index_unchecked(eix.clone()) };
+            let tail: G::NodeIx = unsafe { self.graph.tail_index_unchecked(&eix) }
+                .borrow()
+                .clone();
+            let head: G::NodeIx = unsafe { self.graph.head_index_unchecked(&eix) }
+                .borrow()
+                .clone();
             if tail == head {
                 // Self-loops are always in the feedback arc set
                 return Some(eix);
