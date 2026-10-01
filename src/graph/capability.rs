@@ -25,7 +25,7 @@ pub trait UpdateNode<'r>: GraphOperation<'r> {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn node_unchecked_mut(&mut self, node_ix: Self::NodeIx) -> &mut Self::Node;
+    unsafe fn node_unchecked_mut(&mut self, node_ix: &Self::NodeIx) -> &mut Self::Node;
 
     /// see [`UpdateNode::walks_of_unchecked_mut()`]
     type WalksFromMut: Iterator<
@@ -60,7 +60,7 @@ pub trait UpdateEdge: GraphProperty {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn edge_unchecked_mut(&mut self, edge_ix: Self::EdgeIx) -> &mut Self::Edge;
+    unsafe fn edge_unchecked_mut(&mut self, edge_ix: &Self::EdgeIx) -> &mut Self::Edge;
 }
 
 /// Marker: node indices are stable across mutations.
@@ -282,13 +282,13 @@ pub trait RemoveNode: RemoveEdge {
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn take_node_unchecked(&mut self, node_ix: Self::NodeIx) -> Self::Node;
+    unsafe fn take_node_unchecked(&mut self, node_ix: &Self::NodeIx) -> Self::Node;
 
     /// Removes the node at `node_ix`, discarding its data.
     ///
     /// # Safety
     /// `node_ix` must be a valid node index currently held by this graph.
-    unsafe fn remove_node_unchecked(&mut self, node_ix: Self::NodeIx)
+    unsafe fn remove_node_unchecked(&mut self, node_ix: &Self::NodeIx)
     where
         Self: RemoveNode,
     {
@@ -320,11 +320,11 @@ pub trait RemoveNode: RemoveEdge {
         let mut nodes_out = IN::default();
         let mut edges_out = IE::default();
         for eix in edge_indices {
-            let e = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, eix) };
+            let e = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, &eix) };
             edges_out.extend(core::iter::once(e));
         }
         for nix in node_indices {
-            let v = unsafe { <Self as RemoveNode>::take_node_unchecked(self, nix) };
+            let v = unsafe { <Self as RemoveNode>::take_node_unchecked(self, &nix) };
             nodes_out.extend(core::iter::once(v));
         }
         (nodes_out, edges_out)
@@ -342,13 +342,13 @@ pub trait RemoveEdge: GraphProperty {
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn take_edge_unchecked(&mut self, edge_ix: Self::EdgeIx) -> Self::Edge;
+    unsafe fn take_edge_unchecked(&mut self, edge_ix: &Self::EdgeIx) -> Self::Edge;
 
     /// Removes the edge at `edge_ix`, discarding its data.
     ///
     /// # Safety
     /// `edge_ix` must be a valid edge index currently held by this graph.
-    unsafe fn remove_edge_unchecked(&mut self, edge_ix: Self::EdgeIx)
+    unsafe fn remove_edge_unchecked(&mut self, edge_ix: &Self::EdgeIx)
     where
         Self: RemoveEdge,
     {

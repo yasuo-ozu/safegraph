@@ -84,3 +84,21 @@ where
     <G as GraphOperation<'r>>::edge_indices(graph)
         .map((|ix: G::EdgeIxRef| ix.borrow().clone()) as fn(_) -> _)
 }
+
+/// The two endpoints of a binary edge, cloned out of
+/// [`endpoints_unchecked`](GraphOperation::endpoints_unchecked) without an
+/// intermediate `Vec`.
+///
+/// # Safety
+/// `edge_ix` must be a valid edge index of `graph`.
+pub(crate) unsafe fn edge_pair<'r, G>(graph: &'r G, edge_ix: &G::EdgeIx) -> (G::NodeIx, G::NodeIx)
+where
+    G: GraphOperation<'r> + ?Sized,
+{
+    let mut ends = unsafe { <G as GraphOperation<'r>>::endpoints_unchecked(graph, edge_ix) }
+        .into_iter()
+        .map(|n| -> G::NodeIx { n.borrow().clone() });
+    let a = ends.next().expect("a binary edge has two endpoints");
+    let b = ends.next().expect("a binary edge has two endpoints");
+    (a, b)
+}

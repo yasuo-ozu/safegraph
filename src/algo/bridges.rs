@@ -138,7 +138,7 @@ where
                     let (eix, neighbor) = neighbors[*idx].clone();
                     *idx += 1;
 
-                    if Some(eix.clone()) == parent_edge {
+                    if parent_edge.as_ref() == Some(&eix) {
                         continue;
                     }
 
@@ -245,7 +245,7 @@ where
                     let (_eix, neighbor) = neighbors[*idx].clone();
                     *idx += 1;
 
-                    if self.parent[&node] == Some(neighbor.clone()) {
+                    if self.parent[&node].as_ref() == Some(&neighbor) {
                         continue;
                     }
 

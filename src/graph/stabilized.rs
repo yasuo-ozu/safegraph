@@ -645,8 +645,8 @@ where
     G: GraphOperation<'r, Node = NodeIx<N>, Edge = EdgeIx<E>> + UpdateNode<'r>,
     G::Endpoints: Map<NodeIx<G::NodeIx>>,
 {
-    unsafe fn node_unchecked_mut(&mut self, ix: Self::NodeIx) -> &mut Self::Node {
-        &mut <G as UpdateNode<'r>>::node_unchecked_mut(&mut self.inner, ix.inner).inner
+    unsafe fn node_unchecked_mut(&mut self, ix: &Self::NodeIx) -> &mut Self::Node {
+        &mut <G as UpdateNode<'r>>::node_unchecked_mut(&mut self.inner, &ix.inner).inner
     }
 
     type WalksFromMut = WalksMut<'r, G, N, E, <G as UpdateNode<'r>>::WalksFromMut>;
@@ -675,8 +675,8 @@ where
     G: GraphOperation<'r, Node = NodeIx<N>, Edge = EdgeIx<E>> + UpdateEdge,
     G::Endpoints: Map<NodeIx<G::NodeIx>>,
 {
-    unsafe fn edge_unchecked_mut(&mut self, ix: Self::EdgeIx) -> &mut Self::Edge {
-        &mut <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, ix.inner).inner
+    unsafe fn edge_unchecked_mut(&mut self, ix: &Self::EdgeIx) -> &mut Self::Edge {
+        &mut <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, &ix.inner).inner
     }
 }
 
@@ -713,8 +713,7 @@ where
                     .map(|ix| ix.borrow().clone())
             };
             if let Some(inner_ix) = tombstone {
-                let entry =
-                    <G as UpdateNode<'_>>::node_unchecked_mut(&mut self.inner, inner_ix.clone());
+                let entry = <G as UpdateNode<'_>>::node_unchecked_mut(&mut self.inner, &inner_ix);
                 let new_version = (-entry.version) + 1;
                 *entry = NodeIx {
                     version: new_version,
@@ -792,8 +791,7 @@ where
                     .map(|ix| ix.borrow().clone())
             };
             if let Some(inner_ix) = tombstone {
-                let entry =
-                    <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, inner_ix.clone());
+                let entry = <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, &inner_ix);
                 let new_version = (-entry.version) + 1;
                 *entry = EdgeIx {
                     version: new_version,
@@ -831,14 +829,14 @@ where
     G: GraphOperation<'r, Node = NodeIx<N>, Edge = EdgeIx<E>> + UpdateEdge,
     G::Endpoints: Map<NodeIx<G::NodeIx>>,
 {
-    unsafe fn take_edge_unchecked(&mut self, ix: Self::EdgeIx) -> Self::Edge {
+    unsafe fn take_edge_unchecked(&mut self, ix: &Self::EdgeIx) -> Self::Edge {
         let edge = unsafe { self.inner.edge_unchecked(&ix.inner).inner.clone() };
         <Self as RemoveEdge>::remove_edge_unchecked(self, ix);
         edge
     }
 
-    unsafe fn remove_edge_unchecked(&mut self, ix: Self::EdgeIx) {
-        let entry = <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, ix.inner);
+    unsafe fn remove_edge_unchecked(&mut self, ix: &Self::EdgeIx) {
+        let entry = <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, &ix.inner);
         debug_assert!(entry.version > 0);
         entry.version = -entry.version; // tombstone
         self.live_edges -= 1;
@@ -850,26 +848,26 @@ where
     G: Graph<Node = NodeIx<N>, Edge = EdgeIx<E>> + for<'a> UpdateNode<'a> + UpdateEdge,
     G::Endpoints: Map<NodeIx<G::NodeIx>>,
 {
-    unsafe fn take_node_unchecked(&mut self, ix: Self::NodeIx) -> Self::Node {
+    unsafe fn take_node_unchecked(&mut self, ix: &Self::NodeIx) -> Self::Node {
         let node = unsafe { Graph::node_unchecked(&self.inner, &ix.inner).inner.clone() };
         <Self as RemoveNode>::remove_node_unchecked(self, ix);
         node
     }
 
-    unsafe fn remove_node_unchecked(&mut self, ix: Self::NodeIx) {
+    unsafe fn remove_node_unchecked(&mut self, ix: &Self::NodeIx) {
         let incident_edges: Vec<G::EdgeIx> = {
             <G as GraphOperation<'_>>::edge_indices_of_unchecked(&self.inner, &ix.inner)
                 .map(|eix| eix.borrow().clone())
                 .collect()
         };
         for inner_eix in incident_edges {
-            let edge_entry = <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, inner_eix);
+            let edge_entry = <G as UpdateEdge>::edge_unchecked_mut(&mut self.inner, &inner_eix);
             if edge_entry.version > 0 {
                 edge_entry.version = -edge_entry.version;
                 self.live_edges -= 1;
             }
         }
-        let node_entry = <G as UpdateNode<'_>>::node_unchecked_mut(&mut self.inner, ix.inner);
+        let node_entry = <G as UpdateNode<'_>>::node_unchecked_mut(&mut self.inner, &ix.inner);
         debug_assert!(node_entry.version > 0);
         node_entry.version = -node_entry.version;
         self.live_nodes -= 1;
@@ -888,11 +886,11 @@ where
         let mut edges = IE::default();
 
         for eix in edge_indices {
-            let edge = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, eix) };
+            let edge = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, &eix) };
             edges.extend(core::iter::once(edge));
         }
         for nix in node_indices {
-            let node = unsafe { <Self as RemoveNode>::take_node_unchecked(self, nix) };
+            let node = unsafe { <Self as RemoveNode>::take_node_unchecked(self, &nix) };
             nodes.extend(core::iter::once(node));
         }
 

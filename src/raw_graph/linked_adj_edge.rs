@@ -484,8 +484,8 @@ where
     NC::Value: 'r,
     EC::Value: 'r,
 {
-    unsafe fn node_unchecked_mut(&mut self, node_ix: Self::NodeIx) -> &mut Self::Node {
-        unsafe { self.nodes.get_value_unchecked_mut(&node_ix) }
+    unsafe fn node_unchecked_mut(&mut self, node_ix: &Self::NodeIx) -> &mut Self::Node {
+        unsafe { self.nodes.get_value_unchecked_mut(node_ix) }
     }
 
     type WalksFromMut =
@@ -512,8 +512,8 @@ where
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
-    unsafe fn edge_unchecked_mut(&mut self, edge_ix: Self::EdgeIx) -> &mut Self::Edge {
-        unsafe { self.edges.get_value_unchecked_mut(&edge_ix) }
+    unsafe fn edge_unchecked_mut(&mut self, edge_ix: &Self::EdgeIx) -> &mut Self::Edge {
+        unsafe { self.edges.get_value_unchecked_mut(edge_ix) }
     }
 }
 
@@ -649,20 +649,20 @@ unsafe fn replace_in_list<NC, EC, ESlot>(
 unsafe fn remove_node_inner<NC, EC, ESlot>(
     nodes: &mut NC,
     edges: &mut EC,
-    node_ix: NC::Index,
+    node_ix: &NC::Index,
 ) -> NC::Value
 where
     NC: RemovableRandomAccess<Storage = NodeRepr<ESlot>>,
     EC: RandomAccess<Slot = ESlot, Storage = EdgeRepr<NC::Index, ESlot>>,
     ESlot: Clone + Eq + Hash,
 {
-    let (data, _storage, swapped) = unsafe { nodes.take_unchecked(&node_ix) };
+    let (data, _storage, swapped) = unsafe { nodes.take_unchecked(node_ix) };
 
     if let Some(_old_last) = swapped {
         // The entry at `old_last` was moved to `node_ix`. Re-write every
         // incident edge's endpoint to the new key.
         for dir in [OUTGOING, INCOMING] {
-            let head_slot = unsafe { nodes.get_storage_unchecked(&node_ix) }.next[dir].clone();
+            let head_slot = unsafe { nodes.get_storage_unchecked(node_ix) }.next[dir].clone();
             let mut cur = EC::from_slot(head_slot);
             while let Some(eix) = cur {
                 let s = unsafe { edges.get_storage_unchecked_mut(&eix) };
@@ -781,8 +781,8 @@ where
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
-    unsafe fn take_edge_unchecked(&mut self, edge_ix: Self::EdgeIx) -> Self::Edge {
-        let storage = unsafe { self.edges.get_storage_unchecked(&edge_ix) };
+    unsafe fn take_edge_unchecked(&mut self, edge_ix: &Self::EdgeIx) -> Self::Edge {
+        let storage = unsafe { self.edges.get_storage_unchecked(edge_ix) };
         let [from_node, to_node] = storage.node.clone();
         let next_out_slot = storage.next[OUTGOING].clone();
         let next_in_slot = storage.next[INCOMING].clone();
@@ -792,7 +792,7 @@ where
                 &mut self.nodes,
                 &mut self.edges,
                 &from_node,
-                &edge_ix,
+                edge_ix,
                 next_out_slot,
                 OUTGOING,
             );
@@ -800,20 +800,20 @@ where
                 &mut self.nodes,
                 &mut self.edges,
                 &to_node,
-                &edge_ix,
+                edge_ix,
                 next_in_slot,
                 INCOMING,
             );
         }
 
-        let (data, _storage, swapped) = unsafe { self.edges.take_unchecked(&edge_ix) };
+        let (data, _storage, swapped) = unsafe { self.edges.take_unchecked(edge_ix) };
 
         if let Some(old_last) = swapped {
             // The entry at `old_last` was moved to `edge_ix`. Re-link adjacency
             // pointers that referenced `old_last`.
-            let moved_storage = unsafe { self.edges.get_storage_unchecked(&edge_ix) };
+            let moved_storage = unsafe { self.edges.get_storage_unchecked(edge_ix) };
             let [moved_tail, moved_head] = moved_storage.node.clone();
-            let new_slot = EC::to_slot(edge_ix);
+            let new_slot = EC::to_slot(edge_ix.clone());
             unsafe {
                 replace_in_list(
                     &mut self.nodes,
@@ -846,7 +846,7 @@ where
     NC::Index: Display + Debug,
     EC::Index: Display + Debug,
 {
-    unsafe fn take_node_unchecked(&mut self, node_ix: Self::NodeIx) -> Self::Node {
+    unsafe fn take_node_unchecked(&mut self, node_ix: &Self::NodeIx) -> Self::Node {
         // Drain both adjacency chains. eix is always the head of node_ix's
         // `dir` chain, so we advance it with a direct pointer write rather than
         // walking via replace_in_list. The outgoing pass removes self-loops
@@ -855,7 +855,7 @@ where
         for dir in [OUTGOING, INCOMING] {
             let other = 1 - dir;
             while let Some(eix) = EC::from_slot(
-                unsafe { self.nodes.get_storage_unchecked(&node_ix) }.next[dir].clone(),
+                unsafe { self.nodes.get_storage_unchecked(node_ix) }.next[dir].clone(),
             ) {
                 let (peer, next_this, next_other) = {
                     let s = unsafe { self.edges.get_storage_unchecked(&eix) };
@@ -866,7 +866,7 @@ where
                     )
                 };
                 // eix is the head — advance directly.
-                unsafe { self.nodes.get_storage_unchecked_mut(&node_ix) }.next[dir] = next_this;
+                unsafe { self.nodes.get_storage_unchecked_mut(node_ix) }.next[dir] = next_this;
                 // Unlink eix from peer's `other` chain. For self-loops in the
                 // outgoing pass, peer == node_ix and eix may sit anywhere in
                 // node_ix's incoming chain.
@@ -952,7 +952,7 @@ where
                 // SAFETY: descending order keeps every queued index valid; no
                 // duplicates (checked above), so each slot in
                 // `0..edge_result_len` is written exactly once.
-                let data = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, eix) };
+                let data = unsafe { <Self as RemoveEdge>::take_edge_unchecked(self, &eix) };
                 unsafe { edges_out_buf.get_unchecked_mut(slot).write(data) };
             }
             let mut edges_out = IE::default();
@@ -996,7 +996,7 @@ where
                 // SAFETY: descending order keeps every queued index valid; no
                 // duplicates (checked above), so each slot in
                 // `0..node_result_len` is written exactly once.
-                let data = unsafe { <Self as RemoveNode>::take_node_unchecked(self, nix) };
+                let data = unsafe { <Self as RemoveNode>::take_node_unchecked(self, &nix) };
                 unsafe { nodes_out_buf.get_unchecked_mut(slot).write(data) };
             }
             let mut nodes_out = IN::default();

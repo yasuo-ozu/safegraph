@@ -441,15 +441,17 @@ impl<'r, 'scope, G: ?Sized> RemovableContext<'r, 'scope, G> {
             if let Some(EdgeIx(_, eix)) = first_edge_index.clone() {
                 // SAFETY: scoped indices are produced from this context and
                 // stay valid for the scope.
-                let e =
-                    unsafe { <G as RemoveEdge>::take_edge_unchecked(&mut self.context.graph, eix) };
+                let e = unsafe {
+                    <G as RemoveEdge>::take_edge_unchecked(&mut self.context.graph, &eix)
+                };
                 edges_out.extend(core::iter::once(e));
             }
             if let Some(NodeIx(_, nix)) = first_node_index.clone() {
                 // SAFETY: scoped indices are produced from this context and
                 // stay valid for the scope.
-                let n =
-                    unsafe { <G as RemoveNode>::take_node_unchecked(&mut self.context.graph, nix) };
+                let n = unsafe {
+                    <G as RemoveNode>::take_node_unchecked(&mut self.context.graph, &nix)
+                };
                 nodes_out.extend(core::iter::once(n));
             }
 
@@ -874,7 +876,7 @@ where
     G: for<'x> UpdateNode<'x>,
     <G as GraphProperty>::Endpoints: Map<NodeIx<'scope, <G as GraphProperty>::NodeIx>>,
 {
-    unsafe fn node_unchecked_mut(&mut self, NodeIx(_, node_ix): Self::NodeIx) -> &mut Self::Node {
+    unsafe fn node_unchecked_mut(&mut self, NodeIx(_, node_ix): &Self::NodeIx) -> &mut Self::Node {
         <G as UpdateNode<'_>>::node_unchecked_mut(&mut self.graph, node_ix)
     }
 
@@ -916,7 +918,7 @@ where
     Self: super::Graph<Edge = G::Edge, EdgeIx = EdgeIx<'scope, G::EdgeIx>>,
     G: UpdateEdge,
 {
-    unsafe fn edge_unchecked_mut(&mut self, EdgeIx(_, edge_ix): Self::EdgeIx) -> &mut Self::Edge {
+    unsafe fn edge_unchecked_mut(&mut self, EdgeIx(_, edge_ix): &Self::EdgeIx) -> &mut Self::Edge {
         <G as UpdateEdge>::edge_unchecked_mut(&mut self.graph, edge_ix)
     }
 }

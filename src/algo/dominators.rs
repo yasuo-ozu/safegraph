@@ -63,8 +63,7 @@ use crate::graph::Graph;
 /// The algorithm is computed eagerly in the constructor (it requires fixpoint iteration);
 /// pairs are yielded lazily from the result.
 pub struct Dominators<N> {
-    pairs: Vec<(N, N)>,
-    idx: usize,
+    pairs: std::vec::IntoIter<(N, N)>,
 }
 
 /// Compute immediate dominators using the Cooper-Harvey-Kennedy iterative algorithm.
@@ -104,10 +103,9 @@ where
             stack.pop();
         } else {
             *expanded = true;
-            let node = node.clone();
             // SAFETY: `node` is reachable from the caller-validated `start`.
             let succs: Vec<G::NodeIx> =
-                unsafe { graph.neighbor_indices_from_unchecked(node) }.collect();
+                unsafe { graph.neighbor_indices_from_unchecked(&*node) }.collect();
             for succ in succs.into_iter().rev() {
                 if visited.insert(succ.clone()) {
                     stack.push((succ, false));
@@ -120,8 +118,7 @@ where
 
     if rpo.is_empty() {
         return Dominators {
-            pairs: Vec::new(),
-            idx: 0,
+            pairs: Vec::new().into_iter(),
         };
     }
 
@@ -140,10 +137,9 @@ where
     while changed {
         changed = false;
         for i in 1..n {
-            let node = rpo[i].clone();
-            // SAFETY: `node` came from the RPO walk, so it is a valid index.
+            // SAFETY: `rpo[i]` came from the RPO walk, so it is a valid index.
             let preds: Vec<G::NodeIx> =
-                unsafe { graph.neighbor_indices_to_unchecked(node) }.collect();
+                unsafe { graph.neighbor_indices_to_unchecked(&rpo[i]) }.collect();
 
             let mut new_idom: Option<usize> = None;
 
@@ -173,20 +169,16 @@ where
         }
     }
 
-    Dominators { pairs, idx: 0 }
+    Dominators {
+        pairs: pairs.into_iter(),
+    }
 }
 
 impl<N: Clone> Iterator for Dominators<N> {
     type Item = (N, N);
 
     fn next(&mut self) -> Option<(N, N)> {
-        if self.idx < self.pairs.len() {
-            let pair = self.pairs[self.idx].clone();
-            self.idx += 1;
-            Some(pair)
-        } else {
-            None
-        }
+        self.pairs.next()
     }
 }
 

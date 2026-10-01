@@ -67,7 +67,6 @@
 //! assert_eq!(maximum.len(), 1);
 //! ```
 
-use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 use crate::graph::capability::{Bigraph, StableEdge};
@@ -120,13 +119,7 @@ where
     fn next(&mut self) -> Option<G::EdgeIx> {
         loop {
             let eix = self.edges.next()?;
-            let eps: Vec<G::NodeIx> = unsafe {
-                <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(self.graph, &eix)
-            }
-            .into_iter()
-            .map(|n| n.borrow().clone())
-            .collect();
-            let (a, b) = (eps[0].clone(), eps[1].clone());
+            let (a, b) = unsafe { super::edge_pair(self.graph, &eix) };
 
             // Skip self-loops
             if a == b {
@@ -157,12 +150,7 @@ where
     let mut adj: Adjacency<G> = HashMap::new();
 
     for eix in super::owned_edge_indices(graph) {
-        let eps: Vec<G::NodeIx> =
-            unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, &eix) }
-                .into_iter()
-                .map(|n| n.borrow().clone())
-                .collect();
-        let (a, b) = (eps[0].clone(), eps[1].clone());
+        let (a, b) = unsafe { super::edge_pair(graph, &eix) };
         if a == b {
             continue; // Skip self-loops
         }
@@ -177,12 +165,7 @@ where
     let mut in_matching: HashSet<G::EdgeIx> = HashSet::new();
 
     for eix in super::owned_edge_indices(graph) {
-        let eps: Vec<G::NodeIx> =
-            unsafe { <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, &eix) }
-                .into_iter()
-                .map(|n| n.borrow().clone())
-                .collect();
-        let (a, b) = (eps[0].clone(), eps[1].clone());
+        let (a, b) = unsafe { super::edge_pair(graph, &eix) };
         if a == b {
             continue;
         }
@@ -221,13 +204,7 @@ where
                 // Rebuild match_of from in_matching
                 match_of.clear();
                 for eix in in_matching.iter().cloned() {
-                    let eps: Vec<G::NodeIx> = unsafe {
-                        <G as crate::graph::GraphOperation<'_>>::endpoints_unchecked(graph, &eix)
-                    }
-                    .into_iter()
-                    .map(|n| n.borrow().clone())
-                    .collect();
-                    let (a, b) = (eps[0].clone(), eps[1].clone());
+                    let (a, b) = unsafe { super::edge_pair(graph, &eix) };
                     match_of.insert(a.clone(), (eix.clone(), b.clone()));
                     match_of.insert(b, (eix, a));
                 }

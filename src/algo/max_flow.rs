@@ -215,8 +215,8 @@ where
         let path = unsafe {
             bfs_augmenting_path(
                 self.graph,
-                self.source.clone(),
-                self.sink.clone(),
+                &self.source,
+                &self.sink,
                 &self.residual,
                 &self.reverse_flow,
             )
@@ -259,15 +259,13 @@ where
                 for step in &augmenting_path {
                     match step {
                         AugmentStep::Forward(eix) => {
-                            let eix = eix.clone();
-                            let tail: G::NodeIx = unsafe { self.graph.tail_index_unchecked(&eix) }
+                            let tail: G::NodeIx = unsafe { self.graph.tail_index_unchecked(eix) }
                                 .borrow()
                                 .clone();
-                            let head: G::NodeIx = unsafe { self.graph.head_index_unchecked(&eix) }
+                            let head: G::NodeIx = unsafe { self.graph.head_index_unchecked(eix) }
                                 .borrow()
                                 .clone();
-                            *self.residual.get_mut(&eix).unwrap() =
-                                self.residual[&eix] - bottleneck;
+                            *self.residual.get_mut(eix).unwrap() = self.residual[eix] - bottleneck;
                             let rev = self.reverse_flow.entry((head, tail)).or_default();
                             *rev = *rev + bottleneck;
                         }
@@ -283,11 +281,8 @@ where
                                 )
                             } {
                                 let eix: &G::EdgeIx = eix.borrow();
-                                let head: G::NodeIx =
-                                    unsafe { self.graph.head_index_unchecked(eix) }
-                                        .borrow()
-                                        .clone();
-                                if head == *from {
+                                let head = unsafe { self.graph.head_index_unchecked(eix) };
+                                if Borrow::<G::NodeIx>::borrow(&head) == from {
                                     *self.residual.get_mut(eix).unwrap() =
                                         self.residual[eix] + bottleneck;
                                     break;
@@ -313,8 +308,8 @@ enum AugmentStep<E, N> {
 /// BFS to find an augmenting path in the residual graph.
 unsafe fn bfs_augmenting_path<'r, G, W>(
     graph: &'r G,
-    source: G::NodeIx,
-    sink: G::NodeIx,
+    source: &G::NodeIx,
+    sink: &G::NodeIx,
     residual: &HashMap<G::EdgeIx, W>,
     reverse_flow: &HashMap<(G::NodeIx, G::NodeIx), W>,
 ) -> Option<Vec<AugmentStep<G::EdgeIx, G::NodeIx>>>
@@ -329,11 +324,11 @@ where
     queue.push_back(source.clone());
 
     while let Some(node) = queue.pop_front() {
-        if node == sink {
+        if node == *sink {
             // Reconstruct path
             let mut path = Vec::new();
-            let mut current = sink;
-            while current != source {
+            let mut current = sink.clone();
+            while current != *source {
                 let (prev, step) = visited[&current].clone();
                 path.push(step);
                 current = prev;

@@ -141,10 +141,12 @@ where
                     eix.borrow(),
                 )
             } {
-                let endpoint = endpoint.borrow();
-                if *endpoint != node && !self.visited.contains(endpoint) {
-                    self.visited.insert(endpoint.clone());
-                    self.queue.push_back(endpoint.clone());
+                let endpoint: &G::NodeIx = endpoint.borrow();
+                if *endpoint != node {
+                    let endpoint = endpoint.clone();
+                    if self.visited.insert(endpoint.clone()) {
+                        self.queue.push_back(endpoint);
+                    }
                 }
             }
         }

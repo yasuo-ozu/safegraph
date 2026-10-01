@@ -101,27 +101,23 @@ where
     fn next(&mut self) -> Option<G::EdgeIx> {
         loop {
             let eix = self.edges.next()?;
-            let tail: G::NodeIx = unsafe { self.graph.tail_index_unchecked(&eix) }
-                .borrow()
-                .clone();
-            let head: G::NodeIx = unsafe { self.graph.head_index_unchecked(&eix) }
-                .borrow()
-                .clone();
+            let tail = unsafe { self.graph.tail_index_unchecked(&eix) };
+            let tail: &G::NodeIx = tail.borrow();
+            let head = unsafe { self.graph.head_index_unchecked(&eix) };
+            let head: &G::NodeIx = head.borrow();
 
             let mut reachable_via_other = false;
             for other_eix in unsafe {
                 <G as crate::graph::GraphOperation<'_>>::edge_indices_from_unchecked(
-                    self.graph, &tail,
+                    self.graph, tail,
                 )
             } {
                 let other_eix: &G::EdgeIx = other_eix.borrow();
                 if *other_eix == eix {
                     continue;
                 }
-                let other_head: G::NodeIx = unsafe { self.graph.head_index_unchecked(other_eix) }
-                    .borrow()
-                    .clone();
-                if unsafe { can_reach(self.graph, other_head, head.clone()) } {
+                let other_head = unsafe { self.graph.head_index_unchecked(other_eix) };
+                if unsafe { can_reach(self.graph, other_head.borrow(), head) } {
                     reachable_via_other = true;
                     break;
                 }
@@ -183,7 +179,7 @@ where
 
             // Try to advance current DFS
             if let Some(current) = self.dfs_stack.pop() {
-                let source = self.current_source.clone().unwrap();
+                let source = self.current_source.as_ref().unwrap();
                 let succs: Vec<G::NodeIx> =
                     unsafe { self.graph.neighbor_indices_from_unchecked(current) }.collect();
                 for succ in succs {
@@ -211,7 +207,7 @@ where
 }
 
 /// Helper: check if `target` is reachable from `source` via DFS.
-unsafe fn can_reach<'r, G>(graph: &'r G, source: G::NodeIx, target: G::NodeIx) -> bool
+unsafe fn can_reach<'r, G>(graph: &'r G, source: &G::NodeIx, target: &G::NodeIx) -> bool
 where
     G: Graph + for<'x> Directed<'x> + StableNode + ?Sized,
 {
@@ -220,12 +216,12 @@ where
     }
     let mut visited = HashSet::new();
     let mut stack = vec![source.clone()];
-    visited.insert(source);
+    visited.insert(source.clone());
 
     while let Some(node) = stack.pop() {
         let succs: Vec<G::NodeIx> = graph.neighbor_indices_from_unchecked(node).collect();
         for succ in succs {
-            if succ == target {
+            if succ == *target {
                 return true;
             }
             if visited.insert(succ.clone()) {

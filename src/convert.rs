@@ -35,13 +35,13 @@ where
     let connector = if G::DIRECTED { "-->" } else { "---" };
     graph.scope(|ctx| {
         let mut out = String::from("flowchart LR\n");
-        for n in crate::algo::owned_node_indices(ctx) {
+        for n in Graph::node_indices(ctx) {
             // id = index (links edges), label = escaped node data
-            let label = escape_label(&ctx.node(&n).to_string());
+            let label = escape_label(&ctx.node(n.clone()).to_string());
             out.push_str(&format!("    {}[\"{}\"]\n", n, label));
         }
-        for e in crate::algo::owned_edge_indices(ctx) {
-            let mut it = ctx.endpoints(&e).into_iter();
+        for e in Graph::edge_indices(ctx) {
+            let mut it = ctx.endpoints(e.clone()).into_iter();
             let from = it.next().unwrap();
             let to = it.next().unwrap();
             // label = escaped edge data, endpoints = node indices
