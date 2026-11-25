@@ -15,6 +15,7 @@
 
 mod adapters;
 mod common;
+mod max_flow;
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
@@ -485,4 +486,5 @@ criterion_group! {
     config = Criterion::default().with_measurement(AllocBytes).without_plots();
     targets = bench_memory
 }
-criterion_main!(benches, memory);
+criterion_group!(flow, max_flow::bench_max_flow);
+criterion_main!(benches, memory, flow);

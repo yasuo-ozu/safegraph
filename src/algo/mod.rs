@@ -15,7 +15,7 @@
 //! | **Ranking** | [`page_rank`] |
 //! | **DAG Analysis** | [`tred`], [`feedback_arc_set`] |
 //! | **Spanning Trees** | [`min_spanning_tree`] |
-//! | **Network Flow** | [`max_flow`] |
+//! | **Network Flow & Cuts** | [`max_flow`] (Dinic, Edmonds-Karp, minimum edge and vertex cuts) |
 //! | **Matching** | [`matching`] |
 //!
 //! ## API Pattern
