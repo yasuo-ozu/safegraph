@@ -1,3 +1,6 @@
+// Exercises the `graph!` macro, which needs the `macros` feature.
+#![cfg(feature = "macros")]
+
 use safegraph::graph::prelude::*;
 use safegraph::graph::GraphOperation;
 use safegraph::VecGraph;

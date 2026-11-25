@@ -91,7 +91,8 @@ assert!(g.contains_node_index(&n2));
 
 ### `graph!` Macro
 
-`graph!` supports two modes:
+`graph!` needs the `macros` feature, which is enabled by default (see
+[Cargo Features](#cargo-features)). It supports two modes:
 
 1. Expression mode (no input graph):
    - `let g = graph!( ... );`
@@ -237,6 +238,21 @@ assert!(toposort(&graph).is_err());
 
 // Shortest paths
 let dists = dijkstra(&graph, &"A", None, |_| 1u32);
+```
+
+## Cargo Features
+
+Both are enabled by default.
+
+- `macros` — the [`graph!`](#graph-macro) builder macro. It pulls in the
+  `safegraph-macros` proc-macro crate (and its `syn` dependency); disable it
+  to drop them from your build.
+- `matrix` — `CsMatGraph`, a compressed sparse-matrix backend built on `sprs`.
+  It needs a newer Rust than the 1.56 MSRV, which covers
+  `--no-default-features --features macros`.
+
+```toml
+safegraph = { version = "0.3", default-features = false, features = ["macros"] }
 ```
 
 ## Benchmark

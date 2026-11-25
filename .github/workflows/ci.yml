@@ -12,7 +12,8 @@ env:
 jobs:
   # Verify the core crate still builds on the declared MSRV (rust-version in
   # Cargo.toml). The default `matrix` backend (sprs/ndarray) and the dev-deps
-  # require a newer rustc, so the MSRV covers `--no-default-features`.
+  # require a newer rustc, so the MSRV covers `--no-default-features` plus the
+  # `macros` feature (the `graph!` proc-macro crate, also 1.56-clean).
   #
   # The division of labour below is deliberate: modern cargo does ALL network and
   # resolution work, and 1.56 only compiles. Two reasons —
@@ -47,7 +48,7 @@ jobs:
           # Vendor with stable, then compile offline on 1.56 (see job comment).
           mkdir -p .cargo
           cargo +stable vendor --versioned-dirs vendor > .cargo/config.toml
-          cargo +1.56.0 check --release --no-default-features --locked --offline
+          cargo +1.56.0 check --release --no-default-features --features macros --locked --offline
 
   # PINNED, not floating `stable`. `tests/ui.rs` is part of the default `cargo
   # test` set, and its `.stderr` snapshots compare rustc's diagnostic output

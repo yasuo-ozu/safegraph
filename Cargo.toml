@@ -23,11 +23,14 @@ categories = ["data-structures", "algorithms"]
 readme = "README.md"
 
 [features]
-default = ["matrix"]
+default = ["matrix", "macros"]
 matrix = ["sprs"]
+# The `graph!` builder macro (pulls in the `safegraph-macros` proc-macro crate
+# and its `syn`/`template-quote` build dependencies).
+macros = ["safegraph-macros"]
 
 [dependencies]
-safegraph-macros = { path = "macro", version = "0.3.1" }
+safegraph-macros = { path = "macro", version = "0.3.1", optional = true }
 num-traits = "0.2"
 unicode-width = "0.1"
 sprs = { version = "0.11", default-features = false, optional = true }

@@ -1,4 +1,10 @@
-#![doc = include_str!("../README.md")]
+// The README's examples use `graph!`, so rustdoc can only run them with the
+// `macros` feature; without it the crate doc is a pointer to the README.
+#![cfg_attr(feature = "macros", doc = include_str!("../README.md"))]
+#![cfg_attr(
+    not(feature = "macros"),
+    doc = "A type-safe, scope-aware graph library. See the README (its examples need the `macros` feature) for a guide."
+)]
 pub mod algo;
 pub mod collection;
 pub mod convert;
@@ -16,12 +22,14 @@ pub use crate::collection::IndexKey;
 /// # Examples
 ///
 /// ```rust
+/// # #[cfg(feature = "macros")] {
 /// use safegraph::graph::Graph;
 /// use safegraph::VecGraph;
 ///
 /// let g: VecGraph<&str, u32> = safegraph::graph!({"a"} -- {1} --> {"b"});
 /// assert_eq!(g.len_node(), 2);
 /// assert_eq!(g.len_edge(), 1);
+/// # }
 /// ```
 pub type VecGraph<N, E> = LinkedAdjEdgeGraph<Vec<(N, NodeRepr<u32>)>, Vec<(E, EdgeRepr<u32, u32>)>>;
 
@@ -202,6 +210,9 @@ pub type HyperGraph<N, E> =
 ///     assert_eq!(*ctx.node(n1), (0, 2));
 /// });
 /// ```
+///
+/// Requires the `macros` feature (enabled by default).
+#[cfg(feature = "macros")]
 #[macro_export]
 macro_rules! graph {
     ($($tt:tt)*) => {
@@ -211,6 +222,7 @@ macro_rules! graph {
 
 /// Re-exports used by [`graph!`]'s expansion, so callers need not depend on
 /// `safegraph-macros` themselves. Not public API.
+#[cfg(feature = "macros")]
 #[doc(hidden)]
 pub mod __private {
     pub use safegraph_macros::graph;

@@ -20,9 +20,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
 use safegraph::graph::capability::{
-    Bigraph, Directed, InsertEdge, InsertNode, RemoveNode, StableEdge, StableNode, UniqueEdge,
-    UniqueNode, UpdateEdge, UpdateNode,
+    Bigraph, Directed, InsertEdge, InsertNode, RemoveNode, StableEdge, StableNode,
 };
+#[cfg(feature = "macros")]
+use safegraph::graph::capability::{UniqueEdge, UniqueNode, UpdateEdge, UpdateNode};
 use safegraph::graph::context::NodeIx as ScopedNIx;
 use safegraph::graph::edge::Map;
 use safegraph::graph::prelude::*;
@@ -51,6 +52,7 @@ fn owned_node<C: GraphProperty + ?Sized, R: Borrow<C::NodeIx>>(_graph: &C, r: R)
     r.borrow().clone()
 }
 
+#[cfg(any(feature = "macros", feature = "matrix"))]
 fn check_read_only<C>(ctx: &C, n: [C::NodeIx; 3], e: [C::EdgeIx; 2])
 where
     C: Graph + StableNode + StableEdge,
@@ -183,6 +185,7 @@ where
 // Common run_all harness: every binary backend.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "macros")]
 fn run_all<G>()
 where
     G: Default + 'static,
@@ -339,6 +342,7 @@ where
 // must override it. We only register this harness against backends that do.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "macros")]
 fn run_clear<G>()
 where
     G: Default + 'static,
@@ -385,6 +389,7 @@ where
 // Mutation harness: requires `UpdateNode` / `UpdateEdge` on the inner graph.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "macros")]
 fn run_update<G>()
 where
     G: Default + 'static,
@@ -431,6 +436,7 @@ where
 // Unique-index harness: requires `UniqueNode` / `UniqueEdge` (map-backed).
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "macros")]
 fn run_unique<G>()
 where
     G: Default + 'static,
@@ -471,6 +477,7 @@ where
 // extend_graph harness: builds two graphs, merges, asserts on the result.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "macros")]
 fn run_extend<G>()
 where
     G: Default + 'static,
@@ -515,6 +522,7 @@ where
 
 macro_rules! backend {
     ($name:ident, $G:ty) => {
+        #[cfg(feature = "macros")]
         #[test]
         fn $name() {
             run_all::<$G>();
@@ -524,6 +532,7 @@ macro_rules! backend {
 
 macro_rules! backend_extend {
     ($name:ident, $G:ty) => {
+        #[cfg(feature = "macros")]
         #[test]
         fn $name() {
             run_extend::<$G>();
@@ -533,6 +542,7 @@ macro_rules! backend_extend {
 
 macro_rules! backend_update {
     ($name:ident, $G:ty) => {
+        #[cfg(feature = "macros")]
         #[test]
         fn $name() {
             run_update::<$G>();
@@ -542,6 +552,7 @@ macro_rules! backend_update {
 
 macro_rules! backend_unique {
     ($name:ident, $G:ty) => {
+        #[cfg(feature = "macros")]
         #[test]
         fn $name() {
             run_unique::<$G>();
@@ -551,6 +562,7 @@ macro_rules! backend_unique {
 
 macro_rules! backend_clear {
     ($name:ident, $G:ty) => {
+        #[cfg(feature = "macros")]
         #[test]
         fn $name() {
             run_clear::<$G>();
@@ -575,6 +587,7 @@ type VecFlatVecISG = FlatAdjEdgeGraph<
         FlatNodeRepr<Vec<(u32, u32)>, Vec<FlatEdgeIx<u32, u32>>>,
     )>,
 >;
+#[cfg(feature = "macros")]
 type VecFlatBSetG = FlatAdjEdgeGraph<
     Vec<(
         u32,
@@ -1180,6 +1193,7 @@ fn linked_adj_edge_swap_remove_edges_one_at_a_time() {
     );
 }
 
+#[cfg(feature = "macros")]
 #[test]
 fn linked_adj_edge_swap_remove_drains_in_sequence() {
     // Remove every edge from the fresh graph one at a time. After each pass
