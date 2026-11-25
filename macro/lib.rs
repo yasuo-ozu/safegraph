@@ -4,27 +4,32 @@ use proc_macro::TokenStream;
 use proc_macro2::{Spacing, TokenStream as TokenStream2, TokenTree};
 use proc_macro_error::{abort_if_dirty, emit_error, proc_macro_error, set_dummy};
 use syn::parse::{Parse, ParseStream};
-use syn::{braced, Expr, Ident, Path, Token};
+use syn::{braced, Ident, Token};
 use template_quote::{quote, ToTokens};
 
 // ---------------------------------------------------------------------------
 // AST types
 // ---------------------------------------------------------------------------
 
+/// The tokens of a `{expr}` payload. They are passed through unparsed: rustc
+/// checks the expression where the expansion uses it, so `syn` needs no
+/// expression grammar (its `full` feature).
+type Payload = TokenStream2;
+
 /// A node specification: either a named identifier or an anonymous expression.
 #[derive(Clone)]
 enum NodeSpec {
     Named(Ident),
-    NamedExpr(Ident, Expr),
-    Anon(Expr),
+    NamedExpr(Ident, Payload),
+    Anon(Payload),
 }
 
 /// An edge specification: named ident, anonymous expression, or empty (unit).
 #[derive(Clone)]
 enum EdgeSpec {
     Named(Ident),
-    NamedExpr(Ident, Expr),
-    Anon(Expr),
+    NamedExpr(Ident, Payload),
+    Anon(Payload),
     Empty,
 }
 
@@ -41,8 +46,10 @@ struct LeftArrow;
 
 /// The full macro input.
 struct GraphInput {
-    crate_path: Path,
-    initial: Option<Expr>,
+    /// `$crate` of the `graph!` wrapper.
+    crate_path: TokenStream2,
+    /// The graph expression before `=>`, in statement mode.
+    initial: Option<TokenStream2>,
     decls: Vec<EdgeDecl>,
 }
 
@@ -50,19 +57,26 @@ struct GraphInput {
 // Parsing
 // ---------------------------------------------------------------------------
 
+/// Parses a `{expr}` payload. Empty braces are rejected here, with the same
+/// message `syn` gives for a missing expression.
+fn parse_payload(input: ParseStream) -> syn::Result<Payload> {
+    let content;
+    braced!(content in input);
+    if content.is_empty() {
+        return Err(content.error("expected an expression"));
+    }
+    content.parse()
+}
+
 impl Parse for NodeSpec {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         if input.peek(syn::token::Brace) {
-            let content;
-            braced!(content in input);
-            let expr: Expr = content.parse()?;
+            let expr = parse_payload(input)?;
             Ok(NodeSpec::Anon(expr))
         } else {
             let ident: Ident = input.parse()?;
             if input.peek(syn::token::Brace) {
-                let content;
-                braced!(content in input);
-                let expr: Expr = content.parse()?;
+                let expr = parse_payload(input)?;
                 Ok(NodeSpec::NamedExpr(ident, expr))
             } else {
                 Ok(NodeSpec::Named(ident))
@@ -78,16 +92,12 @@ impl Parse for EdgeSpec {
             return Ok(EdgeSpec::Empty);
         }
         if input.peek(syn::token::Brace) {
-            let content;
-            braced!(content in input);
-            let expr: Expr = content.parse()?;
+            let expr = parse_payload(input)?;
             Ok(EdgeSpec::Anon(expr))
         } else {
             let ident: Ident = input.parse()?;
             if input.peek(syn::token::Brace) {
-                let content;
-                braced!(content in input);
-                let expr: Expr = content.parse()?;
+                let expr = parse_payload(input)?;
                 Ok(EdgeSpec::NamedExpr(ident, expr))
             } else {
                 Ok(EdgeSpec::Named(ident))
@@ -234,16 +244,27 @@ fn parse_reverse_segment(input: ParseStream, left: NodeSpec) -> syn::Result<(Edg
 
 impl Parse for GraphInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let crate_path: Path = input.parse()?;
+        let mut crate_path = TokenStream2::new();
+        while !input.peek(Token![,]) {
+            crate_path.extend(std::iter::once(input.parse::<TokenTree>()?));
+        }
         input.parse::<Token![,]>()?;
 
-        // Try to parse `initial =>` prefix.
-        let initial = if input.peek2(Token![=>]) || {
-            // Look further: could be a longer expression before `=>`
-            let fork = input.fork();
-            fork.parse::<Expr>().is_ok() && fork.peek(Token![=>])
-        } {
-            let expr: Expr = input.parse()?;
+        // Statement mode: `initial => decls`. No declaration contains a `=>`
+        // outside its braces, and no expression does outside a group, so the
+        // first `=>` at this level ends the graph expression. With nothing
+        // before it, the declarations are parsed (and rejected) as they are.
+        let fork = input.fork();
+        let mut before_arrow = 0;
+        while !fork.is_empty() && !fork.peek(Token![=>]) {
+            fork.parse::<TokenTree>()?;
+            before_arrow += 1;
+        }
+        let initial = if before_arrow > 0 && !fork.is_empty() {
+            let mut expr = TokenStream2::new();
+            for _ in 0..before_arrow {
+                expr.extend(std::iter::once(input.parse::<TokenTree>()?));
+            }
             input.parse::<Token![=>]>()?;
             Some(expr)
         } else {
@@ -285,7 +306,7 @@ impl Parse for GraphInput {
 /// Returns `(binding_tokens, is_named)`.
 fn gen_node_insert(
     spec: &NodeSpec,
-    crate_path: &Path,
+    crate_path: &TokenStream2,
     graph_access: &TokenStream2,
     counter: &mut usize,
 ) -> (TokenStream2, bool) {

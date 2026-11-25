@@ -17,7 +17,11 @@ proc-macro = true
 path = "lib.rs"
 
 [dependencies]
-syn = { version = "2", features = ["full"] }
+# Only the parsing machinery: `{expr}` payloads and the statement-mode graph
+# expression are passed through as tokens, so no `full`/`derive` syntax tree.
+syn = { version = "2", default-features = false, features = ["parsing", "proc-macro"] }
 template-quote = "0.5"
 proc-macro2 = "1"
-proc-macro-error = "1"
+# Without its default `syn-error` feature, which only converts `syn` 1 errors
+# and would pull in all of `syn` 1.
+proc-macro-error = { version = "1", default-features = false }

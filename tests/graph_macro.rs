@@ -194,3 +194,43 @@ fn graph_macro_can_be_used_inside_scope_mut_with_bound_idents() {
         assert_eq!(*ctx.edge(e0), (0, 10u32));
     });
 }
+
+/// Payloads are passed through as tokens, not parsed by the macro: any
+/// expression works, including ones with commas or `=>` outside a group.
+#[test]
+// The closure is called in place so that its parameter list puts a comma at
+// the top level of the payload.
+#[allow(clippy::redundant_closure_call)]
+fn graph_macro_passes_any_payload_expression_through() {
+    let flag = true;
+    let pair: std::collections::HashMap<u32, u32> = [(1, 2)].into_iter().collect();
+    let g: VecGraph<u32, u32> = safegraph::graph!(
+        // A closure (its parameter list has a comma outside any group).
+        {(|a: u32, b: u32| a + b)(1, 2)} -- {if flag { 10 } else { 20 }} --> {{
+            let x = 4;
+            x * 2
+        }},
+        // A turbofish with a comma, and a `match` with `=>` inside its braces.
+        {std::collections::HashMap::<u32, u32>::new().len() as u32 + pair[&1]}
+            -- {match flag { true => 30, false => 40 }} --> {[5u32, 6][1]},
+    );
+    let nodes: Vec<u32> = g.nodes().copied().collect();
+    let edges: Vec<u32> = g.edges().copied().collect();
+    assert_eq!(nodes, vec![3, 8, 2, 6]);
+    assert_eq!(edges, vec![10, 30]);
+}
+
+/// The graph expression before `=>` may contain `=>` inside a group.
+#[test]
+fn graph_macro_statement_mode_graph_expression_with_inner_arrow() {
+    let mut a = VecGraph::<u32, u32>::default();
+    let mut b = VecGraph::<u32, u32>::default();
+    let pick_a = false;
+    safegraph::graph!(
+        match pick_a { true => &mut a, false => &mut b } =>
+        {1} -- {7} --> {2}
+    );
+    assert_eq!(a.nodes().count(), 0);
+    let nodes: Vec<u32> = b.nodes().copied().collect();
+    assert_eq!(nodes, vec![1, 2]);
+}
